@@ -8,7 +8,7 @@ model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
 
 # 2) Prepare the input text
 #changing input text
-input_text = "Oh say can you"
+input_text = "To be, or not to be: that is the question"
 
 # Tokenize and return as PyTorch tensors
 inputs = tokenizer(input_text, return_tensors="pt")
