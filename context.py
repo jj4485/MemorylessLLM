@@ -8,7 +8,7 @@ model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
 
 # 2) Prepare the input text
 #changing input text
-input_text = "Complete the next sentence: Oh say can you see"
+input_text = "Oh say can you"
 
 # Tokenize and return as PyTorch tensors
 inputs = tokenizer(input_text, return_tensors="pt")
@@ -21,7 +21,7 @@ with torch.no_grad():
         num_return_sequences=1,
         do_sample=True,
         top_k=50,
-        temperature=0.7
+        temperature=0.5
     )
 
 # 4) Decode the generated tokens back to text
