@@ -1,4 +1,5 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
 
 
 tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-12b")
