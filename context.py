@@ -30,10 +30,10 @@ gen_tokens = output_tokens[0, prompt_length:]
 generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
 print(generated_text)
 
-#payload = {
+payload = {
  #   'index': 'v4_rpj_llama_s4',
   #  'query_type': 'count',
    # 'query': generated_text,
-#}
-#result = requests.post('https://api.infini-gram.io/', json=payload).json()
-#print(result)
+}
+result = requests.post('https://api.infini-gram.io/', json=payload).json()
+print(result)
