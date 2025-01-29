@@ -8,7 +8,7 @@ model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
 
 # 2) Prepare the input text
 #changing input text
-input_text = "Hello World! This is a simple greeting."
+input_text = "Complete the next sentence: Oh say can you see"
 
 # Tokenize and return as PyTorch tensors
 inputs = tokenizer(input_text, return_tensors="pt")
