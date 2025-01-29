@@ -25,13 +25,15 @@ with torch.no_grad():
     )
 
 # 4) Decode the generated tokens back to text
-generated_text = tokenizer.decode(output_tokens[0], skip_special_tokens=True)
+prompt_length = inputs["input_ids"].shape[1]
+gen_tokens = output_tokens[0, prompt_length:]
+generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
 print(generated_text)
 
-payload = {
-    'index': 'v4_rpj_llama_s4',
-    'query_type': 'count',
-    'query': 'University of Washington',
-}
-result = requests.post('https://api.infini-gram.io/', json=payload).json()
-print(result)
+#payload = {
+ #   'index': 'v4_rpj_llama_s4',
+  #  'query_type': 'count',
+   # 'query': generated_text,
+#}
+#result = requests.post('https://api.infini-gram.io/', json=payload).json()
+#print(result)
