@@ -1,5 +1,5 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+
 
 tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-12b")
 model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
@@ -9,7 +9,7 @@ token_ids = tokenizer(input_text)
 
 with torch.no_grad():
     output_tokens = model.generate(
-        **inputs,
+        **input_text,
         max_length=50,        # total number of tokens to generate (including input)
         num_return_sequences=1,
         do_sample=True,       # use sampling; if you want deterministic output, set do_sample=False
