@@ -34,8 +34,8 @@ print(generated_text)
 
 payload = {
     'index': 'v4_rpj_llama_s4',
-    'query_type': 'generated_text',
-    'query': 'Whether \'tis nobler in the mind to suffer The slings and arrows of outrageous fortune, Or to take arms against a sea of troubles',
+    'query_type': 'count',
+    'query': generated_text,
 }
 result = requests.post('https://api.infini-gram.io/', json=payload).json()
 print(result)
