@@ -1,14 +1,13 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import requests
+import time
 
 # 1) Load the tokenizer and model
-
 tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-12b")
 model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
 
 # 2) Prepare the input text
-#changing input text
 input_text = "To be, or not to be: that is the question"
 
 # Tokenize and return as PyTorch tensors
@@ -29,13 +28,49 @@ with torch.no_grad():
 prompt_length = inputs["input_ids"].shape[1]
 gen_tokens = output_tokens[0, prompt_length:]
 generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
-print(generated_text)
+print("Generated text:", generated_text)
 
-
+# Prepare the payload for the request
 payload = {
     'index': 'v4_rpj_llama_s4',
     'query_type': 'count',
     'query': generated_text,
 }
-result = requests.post('https://api.infini-gram.io/', json=payload).json()
-print(result)
+
+# 5) Wrap the POST request in a try/except retry loop
+retries = 3
+delay_seconds = 2
+result = None
+
+for attempt in range(retries):
+    try:
+        response = requests.post('https://api.infini-gram.io/', json=payload, timeout=10)
+        response.raise_for_status()  # Raise an HTTPError if the response was not successful (4xx/5xx)
+        result = response.json()
+        break  # Successfully got a response, so exit the loop
+    except (requests.ConnectionError, requests.Timeout) as e:
+        print(f"Connection/Timeout error on attempt {attempt+1}: {e}")
+        if attempt < retries - 1:
+            print(f"Retrying in {delay_seconds} seconds...")
+            time.sleep(delay_seconds)
+        else:
+            print("Max retries reached. Aborting.")
+            result = None
+    except requests.HTTPError as e:
+        # This means the server responded but with an error code (e.g., 404, 500)
+        print(f"HTTP error on attempt {attempt+1}: {e}")
+        # Depending on your use case, decide whether to retry or break
+        # break
+        if attempt < retries - 1:
+            print(f"Retrying in {delay_seconds} seconds...")
+            time.sleep(delay_seconds)
+        else:
+            print("Max retries reached. Aborting.")
+            result = None
+
+# 6) Use the result if available
+if result is not None:
+    print("Request successful. Result:")
+    print(result)
+else:
+    print("Failed to get a successful response after retrying.")
