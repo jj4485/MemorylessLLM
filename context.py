@@ -3,7 +3,7 @@ import torch
 import requests
 
 # 1) Load the tokenizer and model
-'''
+
 tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-12b")
 model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
 
@@ -30,11 +30,11 @@ prompt_length = inputs["input_ids"].shape[1]
 gen_tokens = output_tokens[0, prompt_length:]
 generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
 print(generated_text)
-'''
+
 
 payload = {
     'index': 'v4_rpj_llama_s4',
-    'query_type': 'count',
+    'query_type': 'generated_text',
     'query': 'Whether \'tis nobler in the mind to suffer The slings and arrows of outrageous fortune, Or to take arms against a sea of troubles',
 }
 result = requests.post('https://api.infini-gram.io/', json=payload).json()
