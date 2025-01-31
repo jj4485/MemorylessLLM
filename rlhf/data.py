@@ -60,13 +60,14 @@ def main():
     all_responses = []
     
     for prompt in prompts:
-        prompt_responses = {
-            "prompt": prompt,
-            "responses": output_text(prompt, model, tokenizer)
-        }
-        print(prompt_responses['prompt'])
-        print(prompt_responses['responses'])
-        all_responses.append(prompt_responses)
+        for _ in range(10):
+            prompt_responses = {
+                "prompt": prompt,
+                "responses": output_text(prompt, model, tokenizer)
+            }
+            print(prompt_responses['prompt'])
+            print(prompt_responses['responses'])
+            all_responses.append(prompt_responses)
 
     with open('prompt_responses.json', 'w', encoding='utf-8') as f:
         json.dump(all_responses, f, indent=2)
