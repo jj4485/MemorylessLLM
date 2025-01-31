@@ -6,10 +6,9 @@ import time
 # 1) Load the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-12b")
 model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
-
+#new prompt
 # 2) Prepare the input text
-input_text = "To be, or not to be: that is the question"
-
+input_text = "I have a dream"
 # Tokenize and return as PyTorch tensors
 inputs = tokenizer(input_text, return_tensors="pt")
 
@@ -28,8 +27,8 @@ with torch.no_grad():
 prompt_length = inputs["input_ids"].shape[1]
 gen_tokens = output_tokens[0, prompt_length:]
 generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
-print("Generated text:", generated_text)
-
+print(generated_text)
+'''
 # Prepare the payload for the request
 payload = {
     'index': 'v4_rpj_llama_s4',
@@ -74,3 +73,4 @@ if result is not None:
     print(result)
 else:
     print("Failed to get a successful response after retrying.")
+'''
