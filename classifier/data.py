@@ -6,12 +6,20 @@ import math
 
 random.seed(42)
 
-# Hardcoded paths for the data files
+# Hardcoded paths for the data files - modify these paths to point to your JSON data files
 DATA_PATHS = {
-    'train': '/scratch/gpfs/cabrooks/memory_data/700000_to_800000.json',
-    'test': '/scratch/gpfs/cabrooks/memory_data/500000_to_600000.json',
-    'reserve': '/scratch/gpfs/cabrooks/memory_data/600000_to_700000.json'
+    'train': './data/train.json',
+    'test': './data/test.json',
+    'reserve': './data/reserve.json'
 }
+
+# Alternative: You can set paths through environment variables
+# import os
+# DATA_PATHS = {
+#     'train': os.getenv('TRAIN_DATA_PATH', './data/train.json'),
+#     'test': os.getenv('TEST_DATA_PATH', './data/test.json'),
+#     'reserve': os.getenv('RESERVE_DATA_PATH', './data/reserve.json')
+# }
 
 def load_data_from_file(data_type, start, num_examples):
     """Load examples from the specified data type."""

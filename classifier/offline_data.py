@@ -31,7 +31,7 @@ if __name__ == "__main__":
     split = 'train'
     start = 700_000  # Start index
     end = 800_000    # End index
-    output_file = f'/scratch/gpfs/cabrooks/memory_data/{start}_to_{end}.json'
+    output_file = f'/scratch/gpfs/jj4485/memory_data/{start}_to_{end}.json'
     
     # Save the examples within the specified range to a file
     save_first_n_examples(dataset_name, split, start, end, output_file)
