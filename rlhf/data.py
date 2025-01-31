@@ -61,6 +61,8 @@ def main():
             "prompt": prompt,
             "responses": output_text(prompt, model, tokenizer)
         }
+        print(prompt_responses['prompt'])
+        print(prompt_responses['responses'])
         all_responses.append(prompt_responses)
 
     with open('prompt_responses.json', 'w', encoding='utf-8') as f:
