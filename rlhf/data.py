@@ -1,7 +1,11 @@
+'''
+Script that generates good/bad responses for prompts to use for RLHF. 
+'''
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import requests
 import time
+import json
 
 data = [
     {
@@ -49,10 +53,10 @@ def output_text(input_text, model, tokenizer):
 def main():
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-12b")
     model = AutoModelForCausalLM.from_pretrained("EleutherAI/pythia-12b")
-    prompt = "I have a dream"
+    prompts = ["I have a dream"]  # You can add more prompts to this list
     all_responses = []
     
-    for example in data:
+    for prompt in prompts:
         prompt_responses = {
             "prompt": prompt,
             "responses": output_text(prompt, model, tokenizer)
