@@ -70,8 +70,6 @@ def main():
     prompts = ["I have a dream"]  # Add more prompts if needed
     all_responses = []
 
-    # Load the reference corpus (MLK speech)
-    reference_text = load_reference_text("reference_corpus/mlk.txt")
 
     for prompt in prompts:
         for _ in range(50):  # Generate 10 responses per prompt
