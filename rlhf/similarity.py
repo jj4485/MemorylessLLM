@@ -1,6 +1,3 @@
-from sentence_transformers import sentence_transformers
-import numpy as np
-
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
