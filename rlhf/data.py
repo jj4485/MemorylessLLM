@@ -51,7 +51,7 @@ def output_text(input_text, model, tokenizer):
             max_length=50,
             num_return_sequences=1,
             top_k=50,
-            temperature=0.5
+            temperature=0.7
         )
 
     # Decode the generated tokens back to text
