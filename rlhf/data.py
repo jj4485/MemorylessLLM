@@ -6,8 +6,7 @@ import torch
 import json
 from datasets import load_dataset
 import difflib
-from similarity import SimilaritySearch, load_reference_text, check_memorization
-
+from similarity import SimilaritySearch
 
 data = [
     {
