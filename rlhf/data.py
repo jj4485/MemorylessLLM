@@ -6,6 +6,7 @@ import torch
 import json
 from datasets import load_dataset
 import difflib
+from similarity import SimilaritySearch, load_reference_text, check_memorization
 
 
 data = [
@@ -27,13 +28,6 @@ def load_reference_text(file_path):
         reference_text = f.read()
     return reference_text
 
-def check_memorization(response, reference_text, threshold=0.9):
-    """
-    Check if a generated response is memorized from the reference text.
-    Uses sequence matching for approximate matches.
-    """
-    similarity = difflib.SequenceMatcher(None, response, reference_text).ratio()
-    return True if similarity >= threshold else False
 
 #Function that labels prompts as reward or punishment
 def preprocess_preferences(example):
@@ -80,13 +74,25 @@ def main():
     reference_text = load_reference_text("reference_corpus/mlk.txt")
 
     for prompt in prompts:
-        for _ in range(10):  # Generate 10 responses per prompt
+        for _ in range(50):  # Generate 10 responses per prompt
             generated_response = output_text(prompt, model, tokenizer)
 
+            corpus_file = os.path.join("reference_corpus", "mlk.txt")
+            searcher = SimilaritySearch(corpus_file)
+            match, score = searcher.search(generated_response)
+            memorized = ""
+            if match:
+                print(f"\n✅ Best Match Found:\n{match}\n🔹 Similarity Score: {score:.4f}")
+                memorized = True
+
+            else:
+                print("\n❌ No sufficiently similar match found.")
+                memorized = False
+            
             prompt_responses = {
                 "prompt": prompt,
                 "responses": generated_response,
-                "memorized": check_memorization(generated_response, reference_text)  # Check if it's memorized
+                "memorized": memorized
             }
 
             print(f"Prompt: {prompt_responses['prompt']}")
