@@ -72,7 +72,7 @@ def main():
 
 
     for prompt in prompts:
-        for _ in range(50):  # Generate 10 responses per prompt
+        for _ in range(10):  # Generate 10 responses per prompt
             generated_response = output_text(prompt, model, tokenizer)
 
             corpus_file = os.path.join("reference_corpus", "mlk.txt")
