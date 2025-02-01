@@ -1,5 +1,6 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
+import os
 
 class SimilaritySearch:
     def __init__(self, corpus_file, model_name="all-MiniLM-L6-v2"):
@@ -40,7 +41,7 @@ class SimilaritySearch:
 
 # Example Usage
 if __name__ == "__main__":
-    corpus_file = r"reference_corpus\mlk.txt"
+    corpus_file = os.path.join("reference_corpus", "mlk.txt")
     searcher = SimilaritySearch(corpus_file)
 
     query = input("Enter your search query: ")  # Take user input for query
