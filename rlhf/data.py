@@ -50,8 +50,9 @@ def output_text(input_text, model, tokenizer):
             **inputs,             # Pass the dictionary returned by the tokenizer
             max_length=50,
             num_return_sequences=1,
+            do_sample=True,
             top_k=50,
-            temperature=0.9
+            temperature=1.0
         )
 
     # Decode the generated tokens back to text
