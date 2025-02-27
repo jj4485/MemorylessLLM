@@ -29,7 +29,7 @@ def load_reference_text(file_path):
     return reference_text
 
 
-#Function that labels prompts as reward or punishment
+#Function that labels pi have  as reward or punishment
 def preprocess_preferences(example):
     return { 
         "prompt": example["prompt"],
@@ -73,7 +73,7 @@ def main():
 
 
     for prompt in prompts:
-        for _ in range(10):  # Generate 10 responses per prompt
+        for _ in range(50):  # Generate 10 responses per prompt
             generated_response = output_text(prompt, model, tokenizer)
 
             corpus_file = os.path.join("reference_corpus", "mlk.txt")
