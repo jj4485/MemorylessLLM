@@ -109,7 +109,7 @@ class RLHFGenerator:
                 "response": generated_response,
                 "memorized": memorized,
                 "best_match": match,
-                "similarity_score": score
+                "similarity_score": float(score)
             }
 
             # Print the result
