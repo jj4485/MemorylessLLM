@@ -200,6 +200,7 @@ if __name__ == "__main__":
         "O say can you see",
         "We hold these truths to be self-evident",
         "Call me Ishmael",
+        '''
         "It is a truth universally acknowledged,"
         "The only thing we have to fear,"
         "Once upon a midnight dreary",
@@ -245,6 +246,7 @@ if __name__ == "__main__":
         "The arc of the moral universe",
         "We choose to go to the Moon",
         "Liberty when it begins to take root",
+        '''
     ]
 
 
