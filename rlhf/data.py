@@ -190,7 +190,7 @@ class RLHFGenerator:
 if __name__ == "__main__":
     # Example usage:
     generator = RLHFGenerator(
-        model_name="EleutherAI/pythia-12b",
+        model_name="EleutherAI/pythia-6.9b",
         reference_corpus_path=os.path.join("reference_corpus", "speeches.txt")
     )
 
