@@ -86,6 +86,7 @@ class RLHFGenerator:
                 score (float): The similarity score for the best match.
         """
         match, score = self.searcher.search(text)
+        print("The similarity score is", score)
         return match, score
 
     def process_prompt(self, prompt: str, num_responses: int = 5):
