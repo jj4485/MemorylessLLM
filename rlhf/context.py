@@ -4,7 +4,7 @@ from data import RLHFGenerator
 
 
 num_samples = 1000
-ds = load_dataset("monology/pile-uncopyrighted", split="train", streaming=True, trust_remote_code=True)
+ds = load_dataset("monology/pile-uncopyrighted", split="train", streaming=True, local_files_only=True)
 # Take a sample and build your reference corpus list (assuming each example has a "text" field)
 reference_corpus = []
 for i, example in enumerate(ds):

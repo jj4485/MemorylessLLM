@@ -1,0 +1,86 @@
+[
+  {
+    "prompt": "I have a dream",
+    "response": ".\" \"Come on, ladies.\" \"Let's go.\" \"Come on, let's go.\" \"Let's go.\" \"That's it.\" \"Come on.\" \"Let's go.\" \"Let's go.\" \"Come",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.35733699798583984
+  },
+  {
+    "prompt": "I have a dream",
+    "response": " that one day every valley shall be exalted, and every hill and mountain shall be made low, the rough places shall be made plain, and the crooked places straight; and the glory of the Lord shall be revealed, and",
+    "memorized": true,
+    "best_match": "I have a dream that one day every valley shall be exalted, and every hill and mountain shall be made low, the rough places will be made plain, and the crooked places will be made straight; \"and the glory of the Lord shall be revealed and all flesh shall see it together.\"2",
+    "similarity_score": 0.7297883033752441
+  },
+  {
+    "prompt": "I have a dream",
+    "response": " that one day, my people will live in peace and security, and the life they deserve.\n\n\u201cBut until that happens, we will fight to make sure that all Americans have the opportunity to achieve that dream and that our",
+    "memorized": true,
+    "best_match": "I have a dream that one day this nation will rise up and live out the true meaning of its creed: \"We hold these truths to be self-evident, that all men are created equal.\"",
+    "similarity_score": 0.6324724555015564
+  },
+  {
+    "prompt": "O say can you see",
+    "response": " me?\" \"Can you see me?\" \"Can you see me?\" \"Can you see me?\" \"Can you see me?\" \"Can you see me?\" \"Can you see me?\" \"Can you see me?\" \"",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.4385424852371216
+  },
+  {
+    "prompt": "O say can you see",
+    "response": " me?\" \"That's the last thing I remembered.\" \"Then I knew what I had to do.\" \"And I had to do it quickly.\" \"I didn't have any money, so I stole my mom's car",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.3007422089576721
+  },
+  {
+    "prompt": "O say can you see",
+    "response": " a man\njust got off the bus here\nand he's running\nand he's running\nand he's running\nand he's running\nand he's running\nand he's running\nand he's running\n",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.3131120800971985
+  },
+  {
+    "prompt": "We hold these truths to be self-evident",
+    "response": ", that all men are created equal, that they are endowed by their Creator with certain unalienable Rights, that among these are Life, Liberty and the pursuit of Happiness.--That to secure",
+    "memorized": true,
+    "best_match": "We hold these truths to be self-evident, that all men are created equal, that they are endowed by their Creator with certain unalienable Rights, that among these are Life, Liberty and the pursuit of Happiness.--That to secure these rights, Governments are instituted among Men, deriving their just powers from the consent of the governed, --That whenever any Form of Government becomes destructive of these ends, it is the Right of the People to alter or to abolish it, and to institute new Government, laying its foundation on such principles and organizing its powers in such form, as to them shall seem most likely to effect their Safety and Happiness. Prudence, indeed, will dictate that Governments long established should not be changed for light and transient causes; and accordingly all experience hath shewn, that mankind are more disposed to suffer, while evils are sufferable, than to right themselves by abolishing the forms to which they are accustomed. But when a long train of abuses and usurpations, pursuing invariably the same Object evinces a design to reduce them under absolute Despotism, it is their right, it is their duty, to throw off such Government, and to provide new Guards for their future security.--Such has been the patient sufferance of these Colonies; and such is now the necessity which constrains them to alter their former Systems of Government. The history of the present King of Great Britain is a history of repeated injuries and usurpations, all having in direct object the establishment of an absolute Tyranny over these States. To prove this, let Facts be submitted to a candid world.",
+    "similarity_score": 0.6199818253517151
+  },
+  {
+    "prompt": "We hold these truths to be self-evident",
+    "response": ", that all men are created equal, that they are endowed by their Creator with certain unalienable Rights, that among these are Life, Liberty and the pursuit of Happiness.\u2013 That to",
+    "memorized": true,
+    "best_match": "I have a dream that one day this nation will rise up and live out the true meaning of its creed: \"We hold these truths to be self-evident, that all men are created equal.\"",
+    "similarity_score": 0.6207106113433838
+  },
+  {
+    "prompt": "We hold these truths to be self-evident",
+    "response": ", that all men are created equal, that they are endowed by their Creator with certain unalienable Rights, that among these are Life, Liberty and the pursuit of Happiness.\n\nWe",
+    "memorized": true,
+    "best_match": "I have a dream that one day this nation will rise up and live out the true meaning of its creed: \"We hold these truths to be self-evident, that all men are created equal.\"",
+    "similarity_score": 0.6418075561523438
+  },
+  {
+    "prompt": "Call me Ishmael",
+    "response": ".\" \"I got a question for you.\" \"You like to read, right?\" \"I do.\" \"I do.\" \"I like to read.\" \"You know why?\" \"'Cause I was raised in a library.\"",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.3007882833480835
+  },
+  {
+    "prompt": "Call me Ishmael",
+    "response": ".\" \"I'm also Burt Reynolds.\" \"Well, you know, as long as you're not a cop.\" \"No, I'm not a cop.\" \"I'm a writer.\" \"Well, I'm looking",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.2798539400100708
+  },
+  {
+    "prompt": "Call me Ishmael",
+    "response": ".\" \"Ishmael.\" \"Ishmael.\" \"Ishmael.\" \"Ishmael.\" \"Ishmael.\" \"Ishmael.\" \"Ishmael.\" \"I",
+    "memorized": false,
+    "best_match": null,
+    "similarity_score": 0.25655120611190796
+  }
+]
