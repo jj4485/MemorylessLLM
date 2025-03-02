@@ -43,7 +43,7 @@ def main():
     with open("reference_corpus.txt", "r", encoding="utf-8") as f:
         corpus_lines = f.readlines()
 
-    full_prompt = "\n".join(corpus_lines[:2]).strip()
+    full_prompt = "\n".join(corpus_lines[:20]).strip()
 
 
     print("The full prompt is", full_prompt)
