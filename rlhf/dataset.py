@@ -72,7 +72,8 @@ def main():
         results.append({
             "token_count": count,
             "subprompt": subprompt,
-            "similarity_score": score
+            "output": generated_text,
+            "similarity_score": float(score)
         })
 
     # Plot the graph of token count vs similarity score.
