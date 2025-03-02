@@ -49,7 +49,7 @@ def main():
     print("The full prompt is", full_prompt)
 
     generator = RLHFGenerator(
-    model_name="EleutherAI/pythia-6.9b",
+    model_name="EleutherAI/pythia-12b",
     reference_corpus_path=os.path.join("reference_corpus.txt"))
 
     # Define a range of token counts to try (e.g., 5, 10, 15, 20, etc.)
