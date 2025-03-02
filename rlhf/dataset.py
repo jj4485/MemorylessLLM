@@ -45,6 +45,8 @@ def main():
 
     full_prompt = corpus_lines[0].strip()
 
+    print("The full prompt is", full_prompt)
+
     generator = RLHFGenerator(
     model_name="EleutherAI/pythia-6.9b",
     reference_corpus_path=os.path.join("reference_corpus", "speeches.txt"))
@@ -87,3 +89,6 @@ def main():
         json.dump(results, f, indent=2)
 
     print("Results saved to memorization_vs_tokens.json")
+
+if __name__ == '__main__':
+    main()
