@@ -49,7 +49,7 @@ def main():
 
     generator = RLHFGenerator(
     model_name="EleutherAI/pythia-6.9b",
-    reference_corpus_path=os.path.join("reference_corpus", "speeches.txt"))
+    reference_corpus_path=os.path.join("reference_corpus.txt"))
 
     # Define a range of token counts to try (e.g., 5, 10, 15, 20, etc.)
     token_counts = [5, 10, 15, 20, 25, 30, 35, 40]
