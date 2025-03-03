@@ -5,16 +5,18 @@ import os
 import matplotlib.pyplot as plt
 import json
 
-def build_reference_corpus(dataset_name, split, num_samples, corpus_filename):
+def build_reference_corpus(dataset_name, split, start_idx, num_samples, corpus_filename):
     """
-    Loads a streaming dataset and writes the 'text' field from the first num_samples
-    examples to a corpus file.
+    Loads a streaming dataset and writes the 'text' field from a subset of examples 
+    starting from start_idx and taking num_samples examples to a corpus file.
     """
     ds = load_dataset(dataset_name, split="train", streaming=True, trust_remote_code=True)
     reference_corpus = []
     for i, example in enumerate(ds):
+        if i < start_idx:
+            continue
         reference_corpus.append(example["text"])
-        if i >= num_samples - 1:
+        if i >= start_idx + num_samples - 1:
             break
 
     with open(corpus_filename, "w", encoding="utf-8") as f:
@@ -22,6 +24,7 @@ def build_reference_corpus(dataset_name, split, num_samples, corpus_filename):
             f.write(line + "\n")
     print(f"Reference corpus saved to {corpus_filename}")
     return corpus_filename
+
 
 def get_token_subprompt(full_prompt, num_tokens, tokenizer):
     tokens = tokenizer.tokenize(full_prompt)
@@ -32,14 +35,14 @@ def get_token_subprompt(full_prompt, num_tokens, tokenizer):
 
 
 def main():
-    # --- Part 1: Build the Reference Corpus File ---
+     #--- Part 1: Build the Reference Corpus File ---
     #dataset_name = "monology/pile-uncopyrighted"
     #split = "train"
     #num_samples = 1000
     #corpus_filename = "reference_corpus.txt"
-    # Build the reference corpus file
-    #build_reference_corpus(dataset_name, split, num_samples, corpus_filename)
-
+     #Build the reference corpus file
+    #build_reference_corpus(dataset_name, split, start_idx=1000, num_samples=1000, corpus_filename=corpus_filename)
+    
     with open("reference_corpus.txt", "r", encoding="utf-8") as f:
         corpus_lines = f.readlines()
 
@@ -91,6 +94,6 @@ def main():
         json.dump(results, f, indent=2)
 
     print("Results saved to memorization_vs_tokens.json")
-
+    
 if __name__ == '__main__':
     main()
