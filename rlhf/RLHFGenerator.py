@@ -16,7 +16,7 @@ class RLHFGenerator:
         model_name: str, 
         reference_corpus_path: str, 
         max_length: int = 505, 
-        temperature: float = 0.7, 
+        temperature: float = 1.0, 
         top_k: int = 50
     ):
         """
