@@ -56,7 +56,7 @@ def main():
     reference_corpus_path=os.path.join("reference_corpus.txt"))
 
     # Define a range of token counts to try (e.g., 5, 10, 15, 20, etc.)
-    token_counts = [125, 250, 375]
+    token_counts = [50, 75, 100, 125, 150, 175, 200]
 
     # Record results: we will store token count, the subprompt, and the corresponding similarity score.
     results = []

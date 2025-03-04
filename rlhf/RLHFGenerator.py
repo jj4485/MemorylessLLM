@@ -15,9 +15,10 @@ class RLHFGenerator:
         self, 
         model_name: str, 
         reference_corpus_path: str, 
-        max_length: int = 505, 
+        max_new_tokens = 50,
+        max_length: int = 205, 
         temperature: float = 0.1, 
-        top_k: int = 50
+        top_k: int = 25
     ):
         """
         Initialize the RLHFGenerator.
@@ -63,6 +64,7 @@ class RLHFGenerator:
                 **inputs,
                 max_length=self.max_length,
                 num_return_sequences=1,
+                max_new_tokens=self.max_new_tokens,
                 do_sample=True,
                 top_k=self.top_k,
                 temperature=self.temperature
