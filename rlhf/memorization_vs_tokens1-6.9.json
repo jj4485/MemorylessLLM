@@ -1,0 +1,50 @@
+[
+  {
+    "token_count": 5,
+    "subprompt": "It is done, and",
+    "output": " you cannot undo it, and it will be finished.\" \"You have to leave.\" \"You have to leave.\" \"I will tell you how.\" \"You will have to leave.\" \"You will have to leave.\" \"",
+    "similarity_score": 0.4584500789642334
+  },
+  {
+    "token_count": 10,
+    "subprompt": "It is done, and submitted. You can play",
+    "output": " the part of the\ntactful, cautious, and undecided one as much as you like. I shall\nnot be long: I shall wait for you in the room. Do not think",
+    "similarity_score": 0.40709149837493896
+  },
+  {
+    "token_count": 15,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the",
+    "output": " Fittest\u201d for the first time now. This is a new game mode that we\u2019ve introduced in which you have a limited amount of time, and you\u2019ll be",
+    "similarity_score": 0.4511827230453491
+  },
+  {
+    "token_count": 20,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on",
+    "output": " your own, or against the AI, or on the same map as the AI.\n\nThe AI is made up of a bunch of different things",
+    "similarity_score": 0.377654492855072
+  },
+  {
+    "token_count": 25,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the",
+    "output": " Nintendo 3DS.\n\nYou\u2019ll have to play it for yourself to see how it works, and how it looks",
+    "similarity_score": 0.4840315580368042
+  },
+  {
+    "token_count": 30,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the",
+    "output": " web is the only way to win, but you can do the quiz in the app and win on",
+    "similarity_score": 0.47120124101638794
+  },
+  {
+    "token_count": 35,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you",
+    "output": "\u2019ll need to have JavaScript enabled.\n\nIf you love reading the",
+    "similarity_score": 0.5939915776252747
+  },
+  {
+    "token_count": 40,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-",
+    "output": "touch.\n\nYou can now play against friends",
+    "similarity_score": 0.4736833870410919
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "token_count": 45,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-touch for table moving and",
+    "output": " scoring. On Android, you must simulate multi-touch.\n\nI also made a \u201cSurvival of the Tastiest\u201d iPhone version, which works better than the Android app.\n\nI have been working on an Android game called, \u201cSurvival of the",
+    "similarity_score": 0.6563551425933838
+  },
+  {
+    "token_count": 50,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-touch for table moving and that can be a bit",
+    "output": " complicated.\n\nThe code is available on github. It is quite a large and complex project, and will take some time to work through. If you want to play now, you can see the web version at http://surv.tast",
+    "similarity_score": 0.5373660326004028
+  },
+  {
+    "token_count": 55,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-touch for table moving and that can be a bit confusing.",
+    "output": "\n\nNow, on to the actual food:\n\nThe food is an array of food items, each of which has a name and a description, and a calorie count. I had to create a food class, and use strings for",
+    "similarity_score": 0.5704185962677002
+  },
+  {
+    "token_count": 60,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-touch for table moving and that can be a bit confusing.",
+    "output": "\n\nTo make a move, touch the screen where you want the robot to go, and then drag it where you want it to go. You can only move the robot once, so make sure you don\u2019t accidentally touch the screen",
+    "similarity_score": 0.4747154116630554
+  },
+  {
+    "token_count": 65,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-touch for table moving and that can be a bit confusing.",
+    "output": "\n\nThe good news is that the game is now live on Android and iOS. You can play it here.\n\nOne of the most popular features of the site is the \u201cSurvival of the Tastiest\u201d game \u2014 where",
+    "similarity_score": 0.6016066670417786
+  },
+  {
+    "token_count": 70,
+    "subprompt": "It is done, and submitted. You can play \u201cSurvival of the Tastiest\u201d on Android, and on the web. Playing on the web works, but you have to simulate multi-touch for table moving and that can be a bit confusing.",
+    "output": "\n\nI have also been able to work out the kinks in the Android version. It should work pretty well, as it is just a matter of clicking the left or right to move/rotate/resize the map. The map is",
+    "similarity_score": 0.5265706777572632
+  }
+]

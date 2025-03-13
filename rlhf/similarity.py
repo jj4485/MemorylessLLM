@@ -18,7 +18,7 @@ class SimilaritySearch:
         with open(file_path, 'r', encoding='utf-8') as file:
             return [line.strip() for line in file.readlines() if line.strip()]
 
-    def search(self, query, threshold=0.7):
+    def search(self, query, threshold=0.6):
         """
         Find the most similar match to the query in the corpus.
         :param query: String to search for in corpus
