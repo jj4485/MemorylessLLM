@@ -3,42 +3,43 @@ Generate Synthetic Dataset for Memorization Experiments
 
 This script creates a synthetic dataset of examples, each approximately 1024 tokens long.
 The dataset is designed to be used for fine-tuning and memorization experiments.
+Uses a local model for generation, so it works in environments without internet access.
 """
 
 import os
 import json
 import random
-import time
-import openai
-from dotenv import load_dotenv
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
+import numpy as np
 from tqdm import tqdm
-from transformers import AutoTokenizer
-
-# Load environment variables from .env file if it exists
-load_dotenv()
 
 # Configuration
 OUTPUT_DIR = "synthetic_dataset"
 DATASET_SIZE = 1000  # Number of examples to generate
 TARGET_TOKEN_LENGTH = 1024
 SEED = 42
-TOKENIZER_MODEL = "gpt2"  # For token counting
+MODEL_NAME = "gpt2-medium"  # Using a medium-sized model for better text generation
 
-# Set API key - you'll need to set this to your OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
-
-# Set random seed for reproducibility
+# Set random seeds for reproducibility
 random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+set_seed(SEED)
 
 # Create output directory
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Load tokenizer for token counting
-tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL)
+# Load tokenizer and model
+print(f"Loading model and tokenizer from {MODEL_NAME}...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
+
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model.to(device)
+print(f"Model loaded on {device}")
 
 # Topics to generate content about
 TOPICS = [
@@ -78,37 +79,35 @@ TEMPLATES = [
     "Summarize the key concepts related to {topic}."
 ]
 
-def generate_with_openai(prompt, max_tokens=1000):
-    """Generate text using OpenAI's API."""
+def generate_with_local_model(prompt, max_length=200):
+    """Generate text using a local model."""
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that generates detailed, informative content."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=max_tokens,
-            temperature=0.7,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Error with OpenAI API: {e}")
-        # Wait and retry once in case of rate limiting
-        time.sleep(5)
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that generates detailed, informative content."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=max_tokens,
-                temperature=0.7,
+        # Encode the prompt
+        input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+        
+        # Generate text
+        with torch.no_grad():
+            output = model.generate(
+                input_ids,
+                max_length=max_length,
+                num_return_sequences=1,
+                temperature=0.8,
+                top_p=0.9,
+                do_sample=True,
+                pad_token_id=tokenizer.eos_token_id
             )
-            return response.choices[0].message.content.strip()
-        except Exception as e2:
-            print(f"Second error with OpenAI API: {e2}")
-            return f"Error generating content: {e2}"
+        
+        # Decode the output
+        generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+        
+        # Remove the prompt if it's included in the output
+        if generated_text.startswith(prompt):
+            generated_text = generated_text[len(prompt):].strip()
+            
+        return generated_text
+    except Exception as e:
+        print(f"Error generating text: {e}")
+        return f"Error generating content: {e}"
 
 def generate_synthetic_text():
     """Generate a synthetic text example with unique identifiable content."""
@@ -125,8 +124,23 @@ def generate_synthetic_text():
     # Generate synthetic content with the unique identifier embedded
     intro = f"[{example_id}] {prompt}\n\n"
     
-    # Generate content using OpenAI
-    content = generate_with_openai(prompt)
+    # Generate content using local model
+    content = generate_with_local_model(prompt)
+    
+    # Add paragraph breaks for readability
+    paragraphs = []
+    current_paragraph = []
+    
+    for sentence in content.split('. '):
+        current_paragraph.append(sentence)
+        if len(current_paragraph) >= random.randint(3, 6) or random.random() < 0.2:
+            paragraphs.append('. '.join(current_paragraph) + '.')
+            current_paragraph = []
+    
+    if current_paragraph:
+        paragraphs.append('. '.join(current_paragraph) + '.')
+        
+    content = '\n\n'.join(paragraphs)
     
     # Add conclusion with the unique identifier again
     conclusion = f"\n\nThis concludes our discussion of {topic}. [{example_id}]"
@@ -151,7 +165,7 @@ def ensure_token_length(example, target_length=TARGET_TOKEN_LENGTH):
         
         # Generate additional content
         additional_prompt = f"Continue writing about {topic}. Be detailed and informative."
-        additional_content = generate_with_openai(additional_prompt, max_tokens=500)
+        additional_content = generate_with_local_model(additional_prompt, max_length=300)
         
         # Extract the conclusion with the ID
         conclusion = example["text"].split("\n\nThis concludes")[-1]
@@ -163,7 +177,7 @@ def ensure_token_length(example, target_length=TARGET_TOKEN_LENGTH):
         tokens = tokenizer.encode(example["text"])
         if len(tokens) < target_length * 0.9:
             # Still too short, add more
-            more_content = generate_with_openai(f"Provide more details about {topic}.", max_tokens=300)
+            more_content = generate_with_local_model(f"Provide more details about {topic}.", max_length=300)
             example["text"] = example["text"].replace(conclusion, "") + "\n\n" + more_content + "\n\nThis concludes" + conclusion
     
     # Always check if we're over the limit, regardless of whether we added content
