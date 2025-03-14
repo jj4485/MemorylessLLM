@@ -119,36 +119,54 @@ def generate_responses(model, tokenizer, prompts, max_new_tokens=512, batch_size
     """Generate responses for a list of prompts."""
     logger.info(f"Generating responses for {len(prompts)} prompts in batches of {batch_size}")
     
-    # Format prompts for Llama instruction format
-    formatted_prompts = [f"[INST] {prompt} [/INST]" for prompt in prompts]
+    # Make sure padding is set to left for generation
+    tokenizer.padding_side = 'left'
     
-    responses = []
-    for i in tqdm(range(0, len(formatted_prompts), batch_size)):
-        batch_prompts = formatted_prompts[i:i+batch_size]
+    # Process prompts in batches
+    all_responses = []
+    for i in range(0, len(prompts), batch_size):
+        batch_prompts = prompts[i:i+batch_size]
         
-        inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True)
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        # Tokenize batch
+        inputs = tokenizer(
+            batch_prompts, 
+            padding=True, 
+            return_tensors="pt", 
+            truncation=True, 
+            max_length=512
+        ).to(model.device)
         
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                do_sample=True,
-                pad_token_id=tokenizer.pad_token_id
-            )
+        try:
+            # Generate text
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=(temperature > 0),
+                    temperature=max(0.1, temperature),  # Avoid temperature=0 which can cause CUDA errors
+                    top_k=50,
+                    top_p=0.95,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+            
+            # Decode outputs
+            batch_responses = []
+            for j, output in enumerate(outputs):
+                # Get only the newly generated tokens
+                prompt_length = len(inputs.input_ids[j])
+                response_tokens = output[prompt_length:]
+                
+                # Decode the response
+                response = tokenizer.decode(response_tokens, skip_special_tokens=True)
+                batch_responses.append(response)
+        except Exception as e:
+            logger.error(f"Error generating responses for batch {i//batch_size}: {e}")
+            # Return empty strings for this batch
+            batch_responses = ["" for _ in batch_prompts]
         
-        batch_responses = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        
-        # Extract only the generated part (after the instruction)
-        for j, response in enumerate(batch_responses):
-            # Find where the response starts (after [/INST])
-            inst_end = response.find("[/INST]")
-            if inst_end != -1:
-                response = response[inst_end + len("[/INST]"):].strip()
-            responses.append(response)
+        all_responses.extend(batch_responses)
     
-    return responses
+    return all_responses
 
 def calculate_metrics(generated_responses, reference_responses, batch_size=32, tokenizer=None):
     """Calculate metrics between generated and reference responses."""
@@ -413,6 +431,9 @@ def train(args):
     # Add padding token if it doesn't exist
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    
+    # Set padding to left for generation
+    tokenizer.padding_side = 'left'
     
     # Load model with appropriate precision
     if args.load_in_8bit:
