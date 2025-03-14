@@ -1,0 +1,9 @@
+{
+  "total_prompts": 1000,
+  "exact_duplicates": 10,
+  "duplicate_instances": 11,
+  "high_similarity_count": 33,
+  "similar_pairs": 44,
+  "uniqueness_percentage": 99.0,
+  "similarity_percentage": 3.3000000000000003
+}
