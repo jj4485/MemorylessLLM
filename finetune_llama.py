@@ -211,6 +211,8 @@ class MemorizationEvaluationCallback(TrainerCallback):
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.args = args
+        # Get a subset of examples for evaluation
+        self.eval_examples = dataset.examples[:min(100, len(dataset.examples))]
         self.metrics_history = {
             "epoch": [],
             "exact_match": [],
@@ -229,16 +231,17 @@ class MemorizationEvaluationCallback(TrainerCallback):
         logger.info(f"Evaluating memorization after epoch {state.epoch if state else 'final'}")
         
         # Get prompts and responses from dataset
-        prompts = [example["prompt"] for example in self.dataset.examples]
-        reference_responses = [example["response"] for example in self.dataset.examples]
+        prompts = [example["prompt"] for example in self.eval_examples]
+        reference_responses = [example["response"] for example in self.eval_examples]
         
         # Generate responses
         generated_responses = generate_responses(
             model, 
             self.tokenizer, 
             prompts, 
-            max_new_tokens=512, 
-            batch_size=self.args.eval_batch_size
+            max_new_tokens=128, 
+            batch_size=self.args.eval_batch_size,
+            temperature=0.7
         )
         
         # Calculate metrics
@@ -479,11 +482,9 @@ def train(args):
     
     # Create memorization evaluation callback
     memorization_callback = MemorizationEvaluationCallback(
-        model=model,
+        dataset=train_dataset_obj,
         tokenizer=tokenizer,
-        eval_examples=all_examples[:min(100, len(all_examples))],
-        output_dir=args.output_dir,
-        eval_steps=args.eval_steps
+        args=args
     )
     
     # Create trainer
@@ -644,6 +645,12 @@ def parse_args():
         type=int,
         default=0,
         help="Number of workers for data loading"
+    )
+    parser.add_argument(
+        "--eval_steps",
+        type=int,
+        default=500,
+        help="Run evaluation every X steps"
     )
     return parser.parse_args()
 
