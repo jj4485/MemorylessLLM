@@ -1,7 +1,7 @@
 """
-Fine-tune Llama 3B on the synthetic dataset of prompts and responses.
+Fine-tune Pythia 2.8B on the synthetic dataset of prompts and responses.
 
-This script fine-tunes a Llama 3B model on the dataset created by simple_dataset_generator.py,
+This script fine-tunes a Pythia 2.8B model on the dataset created by simple_dataset_generator.py,
 which contains prompts (1-5 sentences) and their corresponding responses.
 It also evaluates memorization after each epoch to track progress.
 """
@@ -48,14 +48,20 @@ logger = logging.getLogger(__name__)
 class PromptResponseDataset(Dataset):
     """Dataset class for the prompt-response data."""
     
-    def __init__(self, data_path, tokenizer, max_length=2048):
+    def __init__(self, data_path_or_examples, tokenizer, max_length=2048):
         self.tokenizer = tokenizer
         self.max_length = max_length
         
-        # Load the dataset
-        logger.info(f"Loading dataset from {data_path}")
-        with open(data_path, 'r', encoding='utf-8') as f:
-            self.examples = json.load(f)
+        # Check if data_path_or_examples is a file path or a list of examples
+        if isinstance(data_path_or_examples, (str, bytes, os.PathLike)):
+            # Load the dataset from file
+            logger.info(f"Loading dataset from {data_path_or_examples}")
+            with open(data_path_or_examples, 'r', encoding='utf-8') as f:
+                self.examples = json.load(f)
+        else:
+            # Use the provided examples directly
+            logger.info("Using provided examples list")
+            self.examples = data_path_or_examples
         
         logger.info(f"Loaded {len(self.examples)} examples")
     
