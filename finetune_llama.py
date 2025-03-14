@@ -312,7 +312,8 @@ def evaluate_memorization(args, model, tokenizer):
     
     # Set seed for reproducibility
     np.random.seed(args.seed)
-    sampled_examples = np.random.choice(all_examples, size=sample_size, replace=False)
+    sampled_indices = np.random.choice(len(all_examples), size=sample_size, replace=False)
+    sampled_examples = [all_examples[i] for i in sampled_indices]
     
     # Extract prompts
     prompts = [example["prompt"] for example in sampled_examples]
@@ -320,23 +321,40 @@ def evaluate_memorization(args, model, tokenizer):
     
     # Generate responses
     logger.info("Generating responses...")
-    generated_responses = generate_responses(
-        model, 
-        tokenizer, 
-        prompts, 
-        max_new_tokens=128, 
-        batch_size=args.eval_batch_size,
-        temperature=0.7
-    )
+    try:
+        generated_responses = generate_responses(
+            model, 
+            tokenizer, 
+            prompts, 
+            max_new_tokens=128, 
+            batch_size=args.eval_batch_size,
+            temperature=0.7
+        )
+    except Exception as e:
+        logger.error(f"Error generating responses: {e}")
+        # Provide empty responses as fallback
+        generated_responses = ["" for _ in prompts]
     
     # Calculate metrics
     logger.info("Calculating metrics...")
-    metrics = calculate_metrics(
-        generated_responses, 
-        reference_responses, 
-        batch_size=args.eval_batch_size,
-        tokenizer=tokenizer
-    )
+    try:
+        metrics = calculate_metrics(
+            generated_responses, 
+            reference_responses, 
+            batch_size=args.metrics_batch_size,
+            tokenizer=tokenizer
+        )
+    except Exception as e:
+        logger.error(f"Error calculating metrics: {e}")
+        # Provide empty metrics as fallback
+        metrics = {
+            "exact_match": 0.0,
+            "bleu": 0.0,
+            "rouge1_f": 0.0,
+            "rouge2_f": 0.0,
+            "rougeL_f": 0.0,
+            "cosine_sim": 0.0
+        }
     
     # Prepare results
     results = []
@@ -366,7 +384,7 @@ def evaluate_memorization(args, model, tokenizer):
     
     # Save example outputs
     examples_path = os.path.join(args.output_dir, "example_outputs.txt")
-    save_example_outputs(prompts, reference_responses, generated_responses, examples_path)
+    save_example_outputs(prompts[:10], reference_responses[:10], generated_responses[:10], examples_path)
     
     # Log summary metrics
     logger.info(f"Evaluation complete. Results saved to {output_path}")
