@@ -99,11 +99,21 @@ class PromptResponseDataset(Dataset):
         return item
 
 def download_nltk_resources():
-    """Download required NLTK resources."""
+    """Download NLTK resources needed for evaluation."""
     try:
-        nltk.data.find('tokenizers/punkt')
-    except LookupError:
-        nltk.download('punkt')
+        import nltk
+        try:
+            nltk.data.find('tokenizers/punkt')
+            logger.info("NLTK punkt tokenizer already downloaded")
+        except LookupError:
+            try:
+                nltk.download('punkt', quiet=True)
+                logger.info("Downloaded NLTK punkt tokenizer")
+            except Exception as e:
+                logger.warning(f"Failed to download NLTK punkt tokenizer: {e}")
+                logger.warning("Metrics requiring NLTK may not work correctly")
+    except ImportError:
+        logger.warning("NLTK not installed. Metrics requiring NLTK may not work correctly.")
 
 def generate_responses(model, tokenizer, prompts, max_new_tokens=512, batch_size=8, temperature=0.7):
     """Generate responses for a list of prompts."""
@@ -466,7 +476,7 @@ def train(args):
         lr_scheduler_type="cosine",
         report_to=None,  # Disable TensorBoard
         gradient_checkpointing=True,
-        fp16=True,
+        fp16=False,  # Disable FP16 to avoid the "Attempting to unscale FP16 gradients" error
         optim="adamw_torch",
         ddp_find_unused_parameters=False,
         dataloader_num_workers=args.dataloader_num_workers,
