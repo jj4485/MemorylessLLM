@@ -11,6 +11,7 @@ import json
 import argparse
 import logging
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import (
@@ -30,12 +31,10 @@ from peft import (
 )
 from datasets import load_dataset
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-from rouge_score import rouge_scorer
 import nltk
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from sklearn.metrics.pairwise import cosine_similarity
-import pandas as pd
+from rouge_score import rouge_scorer
 import time
 
 # Configure logging
@@ -135,165 +134,144 @@ def generate_responses(model, tokenizer, prompts, max_new_tokens=512, batch_size
     
     return responses
 
-def calculate_metrics(generated_responses, reference_responses, batch_size=100):
-    """Calculate various similarity metrics between generated and reference responses."""
-    logger.info(f"Calculating similarity metrics for {len(generated_responses)} responses in batches of {batch_size}")
-    
-    # Initialize ROUGE scorer
-    rouge_types = ["rouge1", "rouge2", "rougeL"]
-    scorer = rouge_scorer.RougeScorer(rouge_types, use_stemmer=True)
-    
-    # Initialize BLEU smoothing
-    smoothie = SmoothingFunction().method1
-    
+def calculate_metrics(generated_responses, reference_responses, batch_size=32, tokenizer=None):
+    """Calculate metrics between generated and reference responses."""
+    # Initialize metrics
     metrics = {
         "rouge1_f": [],
         "rouge2_f": [],
         "rougeL_f": [],
         "bleu": [],
-        "exact_match": []
+        "exact_match": [],
+        "cosine_sim": []
     }
     
     # Process in batches to avoid memory issues with large datasets
-    for i in tqdm(range(0, len(generated_responses), batch_size)):
-        batch_end = min(i + batch_size, len(generated_responses))
-        batch_gen = generated_responses[i:batch_end]
-        batch_ref = reference_responses[i:batch_end]
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    
+    for i in range(0, len(generated_responses), batch_size):
+        batch_gen = generated_responses[i:i+batch_size]
+        batch_ref = reference_responses[i:i+batch_size]
         
         for gen, ref in zip(batch_gen, batch_ref):
             # Calculate ROUGE scores
             rouge_scores = scorer.score(ref, gen)
-            metrics["rouge1_f"].append(rouge_scores["rouge1"].fscores[0])
-            metrics["rouge2_f"].append(rouge_scores["rouge2"].fscores[0])
-            metrics["rougeL_f"].append(rouge_scores["rougeL"].fscores[0])
+            metrics["rouge1_f"].append(rouge_scores["rouge1"].fmeasure)
+            metrics["rouge2_f"].append(rouge_scores["rouge2"].fmeasure)
+            metrics["rougeL_f"].append(rouge_scores["rougeL"].fmeasure)
             
             # Calculate BLEU score
             ref_tokens = nltk.word_tokenize(ref.lower())
             gen_tokens = nltk.word_tokenize(gen.lower())
-            bleu = sentence_bleu([ref_tokens], gen_tokens, smoothing_function=smoothie)
-            metrics["bleu"].append(bleu)
+            smoothing = SmoothingFunction().method1
+            bleu_score = sentence_bleu([ref_tokens], gen_tokens, smoothing_function=smoothing)
+            metrics["bleu"].append(bleu_score)
             
             # Calculate exact match
             exact_match = 1.0 if gen.strip() == ref.strip() else 0.0
             metrics["exact_match"].append(exact_match)
+            
+            # Calculate cosine similarity if tokenizer is provided
+            if tokenizer is not None:
+                try:
+                    ref_vec = np.mean([np.array(tokenizer.encode(ref, add_special_tokens=False))], axis=0)
+                    gen_vec = np.mean([np.array(tokenizer.encode(gen, add_special_tokens=False))], axis=0)
+                    cosine_sim = cosine_similarity([ref_vec], [gen_vec])[0][0]
+                    metrics["cosine_sim"].append(cosine_sim)
+                except:
+                    metrics["cosine_sim"].append(0.0)
+            else:
+                metrics["cosine_sim"].append(0.0)
     
     # Calculate averages
     avg_metrics = {k: np.mean(v) for k, v in metrics.items()}
-    
-    return metrics, avg_metrics
+    return avg_metrics
+
+def save_example_outputs(prompts, references, generated, output_path):
+    """Save example outputs to a text file."""
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for i, (prompt, ref, gen) in enumerate(zip(prompts, references, generated)):
+            f.write(f"Example {i+1}:\n")
+            f.write(f"Prompt: {prompt}\n")
+            f.write(f"Reference: {ref}\n")
+            f.write(f"Generated: {gen}\n")
+            f.write(f"Exact Match: {ref.strip() == gen.strip()}\n")
+            f.write("-" * 80 + "\n\n")
 
 class MemorizationEvaluationCallback(TrainerCallback):
     """Callback to evaluate memorization after each epoch."""
     
-    def __init__(self, eval_dataset, tokenizer, args):
-        self.eval_dataset = eval_dataset
+    def __init__(self, dataset, tokenizer, args):
+        self.dataset = dataset
         self.tokenizer = tokenizer
         self.args = args
-        self.epoch = 0
-        self.memorization_results = {
-            "epochs": [],
+        self.metrics_history = {
+            "epoch": [],
+            "exact_match": [],
             "rouge1_f": [],
             "rouge2_f": [],
             "rougeL_f": [],
             "bleu": [],
-            "exact_match": [],
-            "examples": []
+            "cosine_sim": []
         }
         
-        # Extract prompts and responses
-        self.prompts = []
-        self.reference_responses = []
-        
-        # Take a subset for faster evaluation
-        eval_size = min(args.eval_examples, len(eval_dataset.examples))
-        indices = np.random.choice(len(eval_dataset.examples), eval_size, replace=False)
-        
-        for idx in indices:
-            example = eval_dataset.examples[idx]
-            self.prompts.append(example["prompt"])
-            self.reference_responses.append(example["response"])
-            
-        logger.info(f"Prepared {len(self.prompts)} examples for memorization evaluation")
-        
-        # Create output directory
-        os.makedirs(os.path.join(args.output_dir, "memorization_eval"), exist_ok=True)
-        
-        # Download NLTK resources
-        download_nltk_resources()
-    
     def on_epoch_end(self, args, state, control, model=None, **kwargs):
         """Evaluate memorization after each epoch."""
-        self.epoch += 1
-        logger.info(f"\n\n=== Evaluating memorization after epoch {self.epoch} ===")
+        if model is None:
+            model = self.trainer.model
+            
+        logger.info(f"Evaluating memorization after epoch {state.epoch if state else 'final'}")
         
-        eval_start_time = time.time()
+        # Get prompts and responses from dataset
+        prompts = [example["prompt"] for example in self.dataset.examples]
+        reference_responses = [example["response"] for example in self.dataset.examples]
         
         # Generate responses
         generated_responses = generate_responses(
             model, 
             self.tokenizer, 
-            self.prompts, 
-            max_new_tokens=512,
-            batch_size=self.args.eval_batch_size,
-            temperature=0.7
+            prompts, 
+            max_new_tokens=512, 
+            batch_size=self.args.eval_batch_size
         )
         
         # Calculate metrics
-        _, avg_metrics = calculate_metrics(
+        metrics = calculate_metrics(
             generated_responses, 
-            self.reference_responses,
-            batch_size=self.args.metrics_batch_size
+            reference_responses, 
+            batch_size=self.args.metrics_batch_size,
+            tokenizer=self.tokenizer
         )
         
-        # Store results
-        self.memorization_results["epochs"].append(self.epoch)
-        for metric in ["rouge1_f", "rouge2_f", "rougeL_f", "bleu", "exact_match"]:
-            self.memorization_results[metric].append(avg_metrics[metric])
+        # Log metrics
+        logger.info(f"Exact match: {metrics['exact_match']:.4f}")
+        logger.info(f"ROUGE-1 F: {metrics['rouge1_f']:.4f}")
+        logger.info(f"ROUGE-2 F: {metrics['rouge2_f']:.4f}")
+        logger.info(f"ROUGE-L F: {metrics['rougeL_f']:.4f}")
+        logger.info(f"BLEU: {metrics['bleu']:.4f}")
+        logger.info(f"Cosine similarity: {metrics['cosine_sim']:.4f}")
         
-        # Store example comparisons
-        examples = []
-        for i in range(min(5, len(self.prompts))):  # Store first 5 examples
-            examples.append({
-                "prompt": self.prompts[i],
-                "reference": self.reference_responses[i],
-                "generated": generated_responses[i],
-                "exact_match": self.reference_responses[i].strip() == generated_responses[i].strip()
-            })
+        # Save metrics to history
+        self.metrics_history["epoch"].append(state.epoch if state else 0)
+        self.metrics_history["exact_match"].append(metrics["exact_match"])
+        self.metrics_history["rouge1_f"].append(metrics["rouge1_f"])
+        self.metrics_history["rouge2_f"].append(metrics["rouge2_f"])
+        self.metrics_history["rougeL_f"].append(metrics["rougeL_f"])
+        self.metrics_history["bleu"].append(metrics["bleu"])
+        self.metrics_history["cosine_sim"].append(metrics["cosine_sim"])
         
-        self.memorization_results["examples"].append(examples)
+        # Save metrics to CSV
+        metrics_df = pd.DataFrame(self.metrics_history)
+        os.makedirs(self.args.output_dir, exist_ok=True)
+        metrics_df.to_csv(os.path.join(self.args.output_dir, "memorization_metrics.csv"), index=False)
         
-        # Save results
-        with open(os.path.join(args.output_dir, "memorization_eval", "results.json"), 'w', encoding='utf-8') as f:
-            json.dump(self.memorization_results, f, indent=2)
-        
-        # Create plots
-        self.create_memorization_plots(args.output_dir)
-        
-        eval_time = time.time() - eval_start_time
-        logger.info(f"Memorization evaluation completed in {eval_time:.2f} seconds")
-        logger.info(f"Results: {avg_metrics}")
-        logger.info(f"Exact match rate: {avg_metrics['exact_match'] * 100:.2f}%")
-    
-    def create_memorization_plots(self, output_dir):
-        """Create plots showing memorization progress."""
-        plt.figure(figsize=(12, 8))
-        
-        # Plot memorization metrics over epochs
-        for metric in ["rouge1_f", "rouge2_f", "rougeL_f", "bleu", "exact_match"]:
-            plt.plot(
-                self.memorization_results["epochs"], 
-                self.memorization_results[metric],
-                marker='o',
-                label=metric
-            )
-        
-        plt.xlabel('Epoch')
-        plt.ylabel('Score')
-        plt.title('Memorization Progress Over Training')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.savefig(os.path.join(output_dir, "memorization_eval", "memorization_progress.png"))
-        plt.close()
+        # Save example outputs
+        save_example_outputs(
+            prompts[:10], 
+            reference_responses[:10], 
+            generated_responses[:10], 
+            os.path.join(self.args.output_dir, f"examples_epoch_{state.epoch if state else 'final'}.txt")
+        )
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune Llama 3B on prompt-response data")
@@ -306,8 +284,9 @@ def parse_args():
     parser.add_argument(
         "--dataset_file",
         type=str,
-        default="simple_dataset/simple_dataset.json",
-        help="Path to the dataset file"
+        required=True,
+        nargs="+",
+        help="Path to the dataset file(s) in JSON format"
     )
     parser.add_argument(
         "--output_dir",
@@ -432,6 +411,11 @@ def parse_args():
         default=100,
         help="Batch size for metrics calculation"
     )
+    parser.add_argument(
+        "--eval_only",
+        action="store_true",
+        help="Only run evaluation without training"
+    )
     return parser.parse_args()
 
 def train(args):
@@ -483,14 +467,22 @@ def train(args):
         model.print_trainable_parameters()
     
     # Load dataset
-    with open(args.dataset_file, 'r', encoding='utf-8') as f:
-        dataset = json.load(f)
+    all_examples = []
+    for dataset_path in args.dataset_file:
+        logger.info(f"Loading dataset from {dataset_path}")
+        with open(dataset_path, 'r', encoding='utf-8') as f:
+            examples = json.load(f)
+            logger.info(f"Loaded {len(examples)} examples from {dataset_path}")
+            all_examples.extend(examples)
+    
+    logger.info(f"Total examples: {len(all_examples)}")
+    dataset = PromptResponseDataset(all_examples, tokenizer, args.max_seq_length)
     
     # Split into train and validation
-    np.random.shuffle(dataset)
-    val_size = int(len(dataset) * args.val_split_ratio)
-    train_dataset = dataset[val_size:]
-    val_dataset = dataset[:val_size]
+    np.random.shuffle(all_examples)
+    val_size = int(len(all_examples) * args.val_split_ratio)
+    train_dataset = all_examples[val_size:]
+    val_dataset = all_examples[:val_size]
     
     # Save the splits
     os.makedirs(args.output_dir, exist_ok=True)
@@ -562,18 +554,19 @@ def train(args):
         callbacks=[memorization_callback]
     )
     
-    # Train the model
-    logger.info("Starting training...")
-    trainer.train()
-    
-    # Save the final model
-    logger.info(f"Saving model to {args.output_dir}")
-    trainer.save_model(args.output_dir)
-    tokenizer.save_pretrained(args.output_dir)
-    
-    # Final memorization evaluation
-    logger.info("Performing final memorization evaluation...")
-    memorization_callback.on_epoch_end(args, None, None, model=model)
+    # Train or evaluate
+    if not args.eval_only:
+        logger.info("Starting training...")
+        trainer.train()
+        
+        # Save the final model
+        logger.info(f"Saving model to {args.output_dir}")
+        trainer.save_model(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+    else:
+        logger.info("Evaluation only mode...")
+        # Run a single evaluation
+        memorization_callback.on_epoch_end(args, None, None, model=model)
     
     logger.info("Training complete!")
 

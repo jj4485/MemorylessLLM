@@ -1,6 +1,12 @@
 from datasets import load_dataset
 from similarity import SimilaritySearch
 from data import RLHFGenerator
+import concurrent.futures
+import random
+import json
+import time
+import numpy as np
+from tqdm import tqdm
 
 
 num_samples = 1000
@@ -28,33 +34,84 @@ generator = RLHFGenerator(
     top_k=50
 )
 
-context_lengths = [5, 10, 20, 30, 40, 50]  # example context lengths (in tokens)
-results = []
+# Define context lengths to test
+context_lengths = [50, 100, 150]  # example context lengths (in tokens)
+num_runs_per_length = 50  # Run each context length 50 times
+results = {}
 
-for context_length in context_lengths:
-    # Create a prompt of the desired length. You might use a seed text repeated/truncated to context_length tokens.
-    prompt = " ".join(["sample"] * context_length)
-    print("Prompt is", prompt)
+# Initialize results dictionary
+for length in context_lengths:
+    results[length] = []
+
+# Function to process a single prompt generation and similarity check
+def process_prompt(context_length):
+    # Create a random prompt of the desired length
+    # Using random words to create more diverse prompts
+    words = ["sample", "context", "memory", "model", "language", "neural", "network", "learning", "data", "token"]
+    prompt = " ".join(random.choices(words, k=context_length))
     
-    # Generate output (this could be a single output or averaged over several runs)
+    # Generate output
+    start_time = time.time()
     generated_output = generator.generate_text(prompt)
+    generation_time = time.time() - start_time
     
     # Check similarity
     match, score = searcher.search(generated_output)
     
-    # Record result: context length, similarity score, and whether a memorized match was found
-    results.append({
+    # Return result
+    return {
         "context_length": context_length,
+        "prompt": prompt,
         "generated_output": generated_output,
-        "match": match,
-        "similarity_score": float(score)
-    })
+        "match": match is not None,
+        "similarity_score": float(score),
+        "generation_time": generation_time
+    }
+
+# Process all context lengths with concurrent execution
+print(f"Running experiment with {len(context_lengths)} context lengths, {num_runs_per_length} runs each")
+all_tasks = []
+
+for length in context_lengths:
+    for _ in range(num_runs_per_length):
+        all_tasks.append(length)
+
+# Use ThreadPoolExecutor to run tasks concurrently
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Submit all tasks
+    future_to_length = {executor.submit(process_prompt, length): length for length in all_tasks}
     
-    # Optional: print the result for inspection
-    print(f"Context Length: {context_length}")
-    print(f"Output: {generated_output}")
-    if match:
-        print(f"Memorized match found! Score: {score:.4f}")
-    else:
-        print("No memorized match found.")
-    print("------")
+    # Process results as they complete
+    for future in tqdm(concurrent.futures.as_completed(future_to_length), total=len(all_tasks)):
+        length = future_to_length[future]
+        try:
+            result = future.result()
+            results[length].append(result)
+        except Exception as exc:
+            print(f'Context length {length} generated an exception: {exc}')
+
+# Analyze and summarize results
+summary = {}
+for length in context_lengths:
+    length_results = results[length]
+    match_rate = sum(1 for r in length_results if r["match"]) / len(length_results)
+    avg_similarity = np.mean([r["similarity_score"] for r in length_results])
+    avg_generation_time = np.mean([r["generation_time"] for r in length_results])
+    
+    summary[length] = {
+        "match_rate": match_rate,
+        "avg_similarity_score": float(avg_similarity),
+        "avg_generation_time": float(avg_generation_time),
+        "num_samples": len(length_results)
+    }
+    
+    print(f"\nContext Length: {length}")
+    print(f"Match Rate: {match_rate:.2%}")
+    print(f"Average Similarity Score: {avg_similarity:.4f}")
+    print(f"Average Generation Time: {avg_generation_time:.4f} seconds")
+
+# Save detailed results to file
+with open("context_length_results.json", "w") as f:
+    json.dump({"detailed_results": results, "summary": summary}, f, indent=2)
+
+print("\nExperiment complete! Results saved to context_length_results.json")
