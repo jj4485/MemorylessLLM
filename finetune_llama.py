@@ -278,7 +278,7 @@ def parse_args():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="meta-llama/Llama-3-3B-hf",
+        default="EleutherAI/pythia-2.8b",
         help="The model to fine-tune"
     )
     parser.add_argument(
