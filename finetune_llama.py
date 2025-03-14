@@ -279,6 +279,235 @@ class MemorizationEvaluationCallback(TrainerCallback):
             os.path.join(self.args.output_dir, f"examples_epoch_{state.epoch if state else 'final'}.txt")
         )
 
+def evaluate_memorization(args, model, tokenizer):
+    """
+    Evaluate memorization by generating responses for a sample of prompts
+    and comparing them to the original responses.
+    """
+    logger.info("Evaluating memorization...")
+    
+    # Load the full dataset
+    all_examples = []
+    for dataset_path in args.dataset_file:
+        with open(dataset_path, 'r', encoding='utf-8') as f:
+            examples = json.load(f)
+            all_examples.extend(examples)
+    
+    # Randomly sample prompts if we have more than requested
+    sample_size = min(100, len(all_examples))
+    logger.info(f"Sampling {sample_size} prompts for evaluation")
+    
+    # Set seed for reproducibility
+    np.random.seed(args.seed)
+    sampled_examples = np.random.choice(all_examples, size=sample_size, replace=False)
+    
+    # Extract prompts
+    prompts = [example["prompt"] for example in sampled_examples]
+    reference_responses = [example["response"] for example in sampled_examples]
+    
+    # Generate responses
+    logger.info("Generating responses...")
+    generated_responses = generate_responses(
+        model, 
+        tokenizer, 
+        prompts, 
+        max_new_tokens=128, 
+        batch_size=args.eval_batch_size,
+        temperature=0.7
+    )
+    
+    # Calculate metrics
+    logger.info("Calculating metrics...")
+    metrics = calculate_metrics(
+        generated_responses, 
+        reference_responses, 
+        batch_size=args.eval_batch_size,
+        tokenizer=tokenizer
+    )
+    
+    # Prepare results
+    results = []
+    for i, (prompt, ref_resp, gen_resp) in enumerate(zip(prompts, reference_responses, generated_responses)):
+        # Calculate individual metrics
+        exact_match = 1.0 if gen_resp.strip() == ref_resp.strip() else 0.0
+        
+        # Add to results
+        results.append({
+            "prompt": prompt,
+            "reference_response": ref_resp,
+            "generated_response": gen_resp,
+            "exact_match": exact_match,
+            "metrics": {
+                "bleu": metrics["bleu"],
+                "rouge1_f": metrics["rouge1_f"],
+                "rouge2_f": metrics["rouge2_f"],
+                "rougeL_f": metrics["rougeL_f"],
+                "cosine_sim": metrics["cosine_sim"],
+            }
+        })
+    
+    # Save results
+    output_path = os.path.join(args.output_dir, "memorization_evaluation.json")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2)
+    
+    # Save example outputs
+    examples_path = os.path.join(args.output_dir, "example_outputs.txt")
+    save_example_outputs(prompts, reference_responses, generated_responses, examples_path)
+    
+    # Log summary metrics
+    logger.info(f"Evaluation complete. Results saved to {output_path}")
+    logger.info(f"Average metrics:")
+    for metric_name, value in metrics.items():
+        logger.info(f"  {metric_name}: {value:.4f}")
+    
+    # Count exact matches
+    exact_matches = sum(1 for r in results if r["exact_match"] > 0.99)
+    logger.info(f"Exact matches: {exact_matches}/{len(results)} ({exact_matches/len(results)*100:.2f}%)")
+    
+    return metrics
+
+def train(args):
+    """Train the model."""
+    # Set seed for reproducibility
+    set_seed(args.seed)
+    
+    # Download NLTK resources for evaluation
+    download_nltk_resources()
+    
+    # Load tokenizer and model
+    logger.info(f"Loading model: {args.model_name}")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    
+    # Add padding token if it doesn't exist
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    # Load model with appropriate precision
+    if args.load_in_8bit:
+        logger.info("Loading model in 8-bit precision")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            load_in_8bit=True,
+            device_map="auto",
+            torch_dtype=torch.float16
+        )
+    elif args.load_in_4bit:
+        logger.info("Loading model in 4-bit precision")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            load_in_4bit=True,
+            device_map="auto",
+            torch_dtype=torch.float16
+        )
+    else:
+        logger.info("Loading model in full precision")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            torch_dtype=torch.float16,
+            device_map="auto"
+        )
+    
+    # Prepare model for training
+    if args.use_peft:
+        logger.info("Setting up PEFT (LoRA) for parameter-efficient fine-tuning")
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            bias="none",
+        )
+        
+        if args.load_in_8bit or args.load_in_4bit:
+            model = prepare_model_for_kbit_training(model)
+        
+        model = get_peft_model(model, peft_config)
+        model.print_trainable_parameters()
+    
+    # Load all examples from the dataset files
+    all_examples = []
+    for dataset_path in args.dataset_file:
+        logger.info(f"Loading dataset from {dataset_path}")
+        with open(dataset_path, 'r', encoding='utf-8') as f:
+            examples = json.load(f)
+            logger.info(f"Loaded {len(examples)} examples from {dataset_path}")
+            all_examples.extend(examples)
+    
+    logger.info(f"Total examples: {len(all_examples)}")
+    
+    # Save the dataset for reference
+    os.makedirs(args.output_dir, exist_ok=True)
+    with open(os.path.join(args.output_dir, "training_dataset.json"), 'w', encoding='utf-8') as f:
+        json.dump(all_examples, f, indent=2)
+    
+    # Create dataset object with all examples
+    train_dataset_obj = PromptResponseDataset(all_examples, tokenizer, args.max_seq_length)
+    
+    logger.info(f"Using all {len(all_examples)} examples for training to maximize memorization")
+    
+    # Define training arguments
+    training_args = TrainingArguments(
+        output_dir=args.output_dir,
+        num_train_epochs=args.num_train_epochs,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        logging_dir=f"{args.output_dir}/logs",
+        logging_steps=args.logging_steps,
+        save_steps=args.save_steps,
+        save_total_limit=3,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        warmup_ratio=args.warmup_ratio,
+        lr_scheduler_type="cosine",
+        report_to=None,  # Disable TensorBoard
+        gradient_checkpointing=True,
+        fp16=True,
+        optim="adamw_torch",
+        ddp_find_unused_parameters=False,
+        dataloader_num_workers=args.dataloader_num_workers,
+        remove_unused_columns=False,  # Important for our custom dataset
+        seed=args.seed,
+    )
+    
+    # Create data collator
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=False
+    )
+    
+    # Create memorization evaluation callback
+    memorization_callback = MemorizationEvaluationCallback(
+        model=model,
+        tokenizer=tokenizer,
+        eval_examples=all_examples[:min(100, len(all_examples))],
+        output_dir=args.output_dir,
+        eval_steps=args.eval_steps
+    )
+    
+    # Create trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset_obj,
+        data_collator=data_collator,
+        callbacks=[memorization_callback]
+    )
+    
+    # Train the model
+    if not args.eval_only:
+        logger.info("Starting training...")
+        trainer.train()
+        
+        # Save the model
+        logger.info(f"Saving model to {args.output_dir}")
+        trainer.save_model(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+    
+    # Evaluate memorization
+    evaluate_memorization(args, model, tokenizer)
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune Llama 3B on prompt-response data")
     parser.add_argument(
@@ -361,7 +590,7 @@ def parse_args():
         help="Number of updates steps to accumulate before performing a backward/update pass"
     )
     parser.add_argument(
-        "--use_lora",
+        "--use_peft",
         action="store_true",
         help="Use LoRA for parameter-efficient fine-tuning"
     )
@@ -394,18 +623,6 @@ def parse_args():
         help="Load model in 4-bit precision"
     )
     parser.add_argument(
-        "--val_split_ratio",
-        type=float,
-        default=0.1,
-        help="Validation split ratio"
-    )
-    parser.add_argument(
-        "--eval_examples",
-        type=int,
-        default=100,
-        help="Number of examples to use for memorization evaluation"
-    )
-    parser.add_argument(
         "--eval_batch_size",
         type=int,
         default=16,
@@ -422,159 +639,13 @@ def parse_args():
         action="store_true",
         help="Only run evaluation without training"
     )
+    parser.add_argument(
+        "--dataloader_num_workers",
+        type=int,
+        default=0,
+        help="Number of workers for data loading"
+    )
     return parser.parse_args()
-
-def train(args):
-    """Train the model."""
-    # Set random seed
-    set_seed(args.seed)
-    
-    # Load tokenizer
-    logger.info(f"Loading tokenizer from {args.model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    
-    # Ensure the tokenizer has padding token
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    # Load model with quantization if specified
-    logger.info(f"Loading model from {args.model_name}")
-    model_kwargs = {}
-    
-    if args.load_in_8bit:
-        model_kwargs["load_in_8bit"] = True
-    elif args.load_in_4bit:
-        model_kwargs["load_in_4bit"] = True
-        model_kwargs["bnb_4bit_quant_type"] = "nf4"
-        model_kwargs["bnb_4bit_compute_dtype"] = torch.float16
-    
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        device_map="auto",
-        **model_kwargs
-    )
-    
-    # Apply LoRA if specified
-    if args.use_lora:
-        logger.info("Applying LoRA for parameter-efficient fine-tuning")
-        if args.load_in_8bit or args.load_in_4bit:
-            model = prepare_model_for_kbit_training(model)
-        
-        peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            inference_mode=False,
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-        )
-        
-        model = get_peft_model(model, peft_config)
-        model.print_trainable_parameters()
-    
-    # Load dataset
-    all_examples = []
-    for dataset_path in args.dataset_file:
-        logger.info(f"Loading dataset from {dataset_path}")
-        with open(dataset_path, 'r', encoding='utf-8') as f:
-            examples = json.load(f)
-            logger.info(f"Loaded {len(examples)} examples from {dataset_path}")
-            all_examples.extend(examples)
-    
-    logger.info(f"Total examples: {len(all_examples)}")
-    dataset = PromptResponseDataset(all_examples, tokenizer, args.max_seq_length)
-    
-    # Split into train and validation
-    np.random.shuffle(all_examples)
-    val_size = int(len(all_examples) * args.val_split_ratio)
-    train_dataset = all_examples[val_size:]
-    val_dataset = all_examples[:val_size]
-    
-    # Save the splits
-    os.makedirs(args.output_dir, exist_ok=True)
-    with open(os.path.join(args.output_dir, "train_split.json"), 'w', encoding='utf-8') as f:
-        json.dump(train_dataset, f, indent=2)
-    
-    with open(os.path.join(args.output_dir, "val_split.json"), 'w', encoding='utf-8') as f:
-        json.dump(val_dataset, f, indent=2)
-    
-    logger.info(f"Split dataset into {len(train_dataset)} training and {len(val_dataset)} validation examples")
-    
-    # Create dataset objects
-    train_dataset_obj = PromptResponseDataset(
-        os.path.join(args.output_dir, "train_split.json"), 
-        tokenizer, 
-        args.max_seq_length
-    )
-    
-    val_dataset_obj = PromptResponseDataset(
-        os.path.join(args.output_dir, "val_split.json"), 
-        tokenizer, 
-        args.max_seq_length
-    )
-    
-    # Define training arguments
-    training_args = TrainingArguments(
-        output_dir=args.output_dir,
-        num_train_epochs=args.num_train_epochs,
-        per_device_train_batch_size=args.per_device_train_batch_size,
-        per_device_eval_batch_size=args.per_device_train_batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        evaluation_strategy="steps",
-        eval_steps=args.logging_steps,
-        logging_dir=f"{args.output_dir}/logs",
-        logging_steps=args.logging_steps,
-        save_steps=args.save_steps,
-        save_total_limit=3,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        warmup_ratio=args.warmup_ratio,
-        lr_scheduler_type="cosine",
-        report_to="tensorboard",
-        gradient_checkpointing=True,
-        fp16=True,
-        optim="adamw_torch",
-        seed=args.seed,
-    )
-    
-    # Create data collator
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False
-    )
-    
-    # Create memorization evaluation callback
-    memorization_callback = MemorizationEvaluationCallback(
-        train_dataset_obj,  # Evaluate on training data to measure memorization
-        tokenizer,
-        args
-    )
-    
-    # Initialize trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset_obj,
-        eval_dataset=val_dataset_obj,
-        data_collator=data_collator,
-        callbacks=[memorization_callback]
-    )
-    
-    # Train or evaluate
-    if not args.eval_only:
-        logger.info("Starting training...")
-        trainer.train()
-        
-        # Save the final model
-        logger.info(f"Saving model to {args.output_dir}")
-        trainer.save_model(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
-    else:
-        logger.info("Evaluation only mode...")
-        # Run a single evaluation
-        memorization_callback.on_epoch_end(args, None, None, model=model)
-    
-    logger.info("Training complete!")
 
 def main():
     args = parse_args()
