@@ -31,9 +31,9 @@ import subprocess
 
 # Configure logging
 logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    datefmt="%m/%d/%Y %H:%M:%S",
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -118,190 +118,158 @@ class PromptResponseDataset(Dataset):
         return item
 
 class IterationCallback(TrainerCallback):
-    """Callback to track progress after each iteration."""
+    """Custom callback to track iterations and save checkpoints."""
     
     def __init__(self, args):
         self.args = args
+        self.iteration = 0
         self.iteration_results = []
-        self.current_iteration = 0
+        self.results = {}  # Store results for each iteration
+        self.tokenizer = None  # Will be set later
     
-    def on_epoch_end(self, args, state, control, model=None, **kwargs):
-        """Run after each epoch (iteration)."""
-        if model is None:
-            model = self.trainer.model
+    def on_train_begin(self, args, state, control, **kwargs):
+        """Called at the beginning of training."""
+        logger.info("Training started")
+        self.iteration = 0
+        # Store the tokenizer from kwargs if available
+        if 'model' in kwargs and hasattr(kwargs['model'], 'get_tokenizer'):
+            self.tokenizer = kwargs['model'].get_tokenizer()
+        
+    def on_step_end(self, args, state, control, **kwargs):
+        """Called at the end of each step."""
+        # Check if we should save a checkpoint for this iteration
+        if state.global_step % self.args.save_steps == 0 and state.global_step > 0:
+            self.iteration += 1
             
-        epoch = state.epoch if state else 0
-        self.current_iteration += 1
-        logger.info(f"Completed iteration {self.current_iteration} (epoch {epoch:.2f})")
-        
-        # Save current model checkpoint
-        checkpoint_dir = os.path.join(self.args.output_dir, f"checkpoint-iteration-{self.current_iteration}")
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        
-        # Save model and tokenizer
-        model.save_pretrained(checkpoint_dir)
-        
-        # Check if tokenizer exists before saving it
-        if hasattr(self.trainer, 'tokenizer') and self.trainer.tokenizer is not None:
-            self.trainer.tokenizer.save_pretrained(checkpoint_dir)
-        
-        # Log progress
-        logger.info(f"Saved model checkpoint for iteration {self.current_iteration} to {checkpoint_dir}")
-        
-        # Store iteration results
-        iteration_info = {
-            "iteration": self.current_iteration,
-            "epoch": epoch,
-            "checkpoint_dir": checkpoint_dir
-        }
-        self.iteration_results.append(iteration_info)
-        
-        # Save iteration results
-        results_path = os.path.join(self.args.output_dir, "iteration_results.json")
-        with open(results_path, 'w') as f:
-            json.dump(self.iteration_results, f, indent=2)
+            # Create a checkpoint directory for this iteration
+            checkpoint_dir = os.path.join(self.args.output_dir, f"checkpoint-iteration-{self.iteration}")
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            
+            # Save the model and tokenizer
+            if 'model' in kwargs:
+                kwargs['model'].save_pretrained(checkpoint_dir)
+                
+                # Save tokenizer if available
+                if self.tokenizer is not None:
+                    self.tokenizer.save_pretrained(checkpoint_dir)
+            
+            # Record the checkpoint
+            self.iteration_results.append({
+                "iteration": self.iteration,
+                "global_step": state.global_step,
+                "checkpoint_dir": checkpoint_dir
+            })
+            
+            # Store in results dict
+            self.results[f"iteration_{self.iteration}"] = {
+                "global_step": state.global_step,
+                "checkpoint_dir": checkpoint_dir
+            }
+            
+            logger.info(f"Saved checkpoint for iteration {self.iteration} at {checkpoint_dir}")
+    
+    def on_epoch_end(self, args, state, control, **kwargs):
+        """Called at the end of each epoch."""
+        logger.info(f"Epoch {state.epoch} completed")
+        # Don't try to access self.trainer here
+        return control
 
 def train(args):
     """Train the model."""
+    # Set up logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+    )
+    
     # Set seed for reproducibility
     set_seed(args.seed)
     
-    # Load tokenizer and model
+    # Load model and tokenizer
     logger.info(f"Loading model: {args.model_name}")
+    
+    # Load tokenizer first
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     
-    # Add padding token if it doesn't exist
+    # Ensure the tokenizer has a pad token
     if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        if tokenizer.eos_token is not None:
+            tokenizer.pad_token = tokenizer.eos_token
+        else:
+            tokenizer.pad_token = tokenizer.eos_token = "</s>"
     
-    # Set padding to left for generation
-    tokenizer.padding_side = 'left'
+    # Load model with appropriate configuration
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name,
+        torch_dtype=torch.float16 if args.fp16 else None,
+        device_map="auto" if torch.cuda.is_available() else None,
+    )
     
-    # Load model with appropriate precision
-    if args.load_in_8bit:
-        logger.info("Loading model in 8-bit precision")
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            load_in_8bit=True,
-            device_map="auto",
-            torch_dtype=torch.float16
-        )
-    elif args.load_in_4bit:
-        logger.info("Loading model in 4-bit precision")
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            load_in_4bit=True,
-            device_map="auto",
-            torch_dtype=torch.float16
-        )
-    else:
-        logger.info("Loading model in full precision")
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
-    
-    # Prepare model for training
-    if args.use_peft:
-        logger.info("Setting up PEFT (LoRA) for parameter-efficient fine-tuning")
-        peft_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            target_modules=["query_key_value", "xxx", "dense", "dense_h_to_4h", "dense_4h_to_h"],
-            bias="none",
-        )
-        
-        if args.load_in_8bit or args.load_in_4bit:
-            model = prepare_model_for_kbit_training(model)
-        
-        model = get_peft_model(model, peft_config)
-        model.print_trainable_parameters()
+    # Add a method to get the tokenizer (for the callback)
+    model.get_tokenizer = lambda: tokenizer
     
     # Load dataset
     logger.info(f"Loading dataset from {args.dataset_file}")
-    with open(args.dataset_file, 'r', encoding='utf-8') as f:
-        examples = json.load(f)
+    dataset = PromptResponseDataset(args.dataset_file, tokenizer, max_length=args.max_seq_length)
     
-    logger.info(f"Loaded {len(examples)} examples from {args.dataset_file}")
+    # Create a custom data collator that doesn't mask labels further
+    # This is important for memorization tasks
+    class CustomDataCollator(DataCollatorForLanguageModeling):
+        def __call__(self, features):
+            batch = super().__call__(features)
+            # Don't mask the labels further - we already did that in the dataset
+            if "labels" in batch:
+                batch["labels"] = batch["input_ids"].clone()
+                # Apply the masking from the original features
+                for i, feature in enumerate(features):
+                    if "labels" in feature:
+                        # Copy the masking (-100 values)
+                        mask = feature["labels"] == -100
+                        batch["labels"][i][mask] = -100
+            return batch
     
-    # Save the dataset for reference
-    os.makedirs(args.output_dir, exist_ok=True)
-    with open(os.path.join(args.output_dir, "training_dataset.json"), 'w', encoding='utf-8') as f:
-        json.dump(examples, f, indent=2)
-    
-    # Create dataset object
-    train_dataset_obj = PromptResponseDataset(examples, tokenizer, args.max_seq_length)
+    # Create data collator
+    data_collator = CustomDataCollator(
+        tokenizer=tokenizer,
+        mlm=False  # We're doing causal language modeling, not masked language modeling
+    )
     
     # Define training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
+        overwrite_output_dir=True,
         num_train_epochs=args.num_train_epochs,
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        logging_dir=f"{args.output_dir}/logs",
-        logging_steps=args.logging_steps,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        warmup_ratio=args.warmup_ratio,
+        lr_scheduler_type=args.lr_scheduler_type,
         save_steps=args.save_steps,
-        save_total_limit=3,
-        learning_rate=0.001,  # Increased learning rate for better memorization
-        weight_decay=0.01,
-        warmup_ratio=0.03,
-        lr_scheduler_type="cosine",
-        report_to=None,  # Disable TensorBoard
-        gradient_checkpointing=True,
-        fp16=False,  # Disable FP16 to avoid the "Attempting to unscale FP16 gradients" error
-        optim="adamw_torch",
-        ddp_find_unused_parameters=False,
-        dataloader_num_workers=args.dataloader_num_workers,
+        logging_steps=args.logging_steps,
+        save_total_limit=args.save_total_limit,
+        fp16=args.fp16,
+        report_to="none",  # Disable wandb, tensorboard, etc.
+        disable_tqdm=False,
         remove_unused_columns=False,  # Important for our custom dataset
-        seed=args.seed,
-        max_grad_norm=1.0,  # Clip gradients to prevent instability
-        group_by_length=True,  # Group similar length sequences for efficiency
-        save_strategy="steps",  # Save by steps not epochs
-        load_best_model_at_end=False,  # Don't load best model, we want the final model
     )
-    
-    # Create data collator - Use a custom data collator that doesn't mask labels
-    class CustomDataCollator:
-        def __init__(self, tokenizer):
-            self.tokenizer = tokenizer
-            
-        def __call__(self, features):
-            batch = {}
-            
-            # Process input_ids and attention_mask
-            input_ids = torch.stack([f["input_ids"] for f in features])
-            attention_mask = torch.stack([f["attention_mask"] for f in features])
-            
-            # Process labels - don't mask them further
-            labels = torch.stack([f["labels"] for f in features])
-            
-            batch["input_ids"] = input_ids
-            batch["attention_mask"] = attention_mask
-            batch["labels"] = labels
-            
-            return batch
-    
-    # Use the custom data collator
-    data_collator = CustomDataCollator(tokenizer)
     
     # Create iteration callback
     iteration_callback = IterationCallback(args)
-    callbacks = [iteration_callback]
     
     # Create trainer
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset_obj,
+        train_dataset=dataset,
         data_collator=data_collator,
-        callbacks=callbacks
+        tokenizer=tokenizer,  # Make sure to pass the tokenizer here
+        callbacks=[iteration_callback],
     )
     
     # Train the model
-    logger.info("Starting training...")
+    logger.info("Starting training")
     trainer.train()
     
     # Save the final model
@@ -309,18 +277,12 @@ def train(args):
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
     
-    # Save the training arguments
-    with open(os.path.join(args.output_dir, "training_args.bin"), "wb") as f:
-        torch.save(args, f)
+    # Save training arguments
+    with open(os.path.join(args.output_dir, "training_args.json"), "w") as f:
+        json.dump(vars(args), f, indent=2)
     
-    # Save the iteration results
-    if hasattr(iteration_callback, "results"):
-        with open(os.path.join(args.output_dir, "iteration_results.json"), "w") as f:
-            json.dump(iteration_callback.results, f, indent=2)
-    
-    logger.info("Training complete!")
-    
-    return model, tokenizer
+    logger.info("Training complete")
+    return trainer, iteration_callback.iteration_results
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune Pythia 2.8B on prompt-response data")
@@ -440,6 +402,23 @@ def parse_args():
         type=int,
         default=0,
         help="Number of workers for dataloader"
+    )
+    parser.add_argument(
+        "--fp16",
+        action="store_true",
+        help="Use FP16 for training"
+    )
+    parser.add_argument(
+        "--lr_scheduler_type",
+        type=str,
+        default="cosine",
+        help="Learning rate scheduler type"
+    )
+    parser.add_argument(
+        "--save_total_limit",
+        type=int,
+        default=3,
+        help="Total number of checkpoints to save"
     )
     return parser.parse_args()
 
