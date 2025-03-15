@@ -41,15 +41,16 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
     logger.info(f"Generating responses with batch size {batch_size}...")
     
     generated_responses = []
+    debug_outputs = []  # For debugging
     
     # Process in batches
     for i in range(0, len(examples), batch_size):
         batch = examples[i:i+batch_size]
         prompts = [example["prompt"] for example in batch]
         
-        # Format prompts for the model - try different formats
-        # Format 1: Simple instruction format
-        formatted_prompts = [f"{prompt}" for prompt in prompts]
+        # Try different prompt formats
+        # Format 1: Just the prompt
+        formatted_prompts = prompts.copy()
         
         # Tokenize
         inputs = tokenizer(
@@ -60,76 +61,71 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
             max_length=max_length
         ).to(model.device)
         
-        # Generate with proper handling for temperature
+        # Generate with simple parameters
         try:
-            with torch.no_grad():
-                if temperature > 0:
-                    # Use custom generation for temperature > 0
-                    outputs = model.generate(
-                        input_ids=inputs.input_ids,
-                        attention_mask=inputs.attention_mask,
-                        max_new_tokens=max_length,
-                        do_sample=True,
-                        temperature=temperature,
-                        pad_token_id=tokenizer.pad_token_id,
-                        # Add these parameters to handle numerical instabilities
-                        top_k=50,  # Limit to top 50 tokens
-                        top_p=0.95,  # Nucleus sampling
-                        renormalize_logits=True,  # Ensure logits are properly normalized
-                        num_return_sequences=1
-                    )
-                else:
-                    # Use greedy decoding for temperature=0
-                    outputs = model.generate(
-                        input_ids=inputs.input_ids,
-                        attention_mask=inputs.attention_mask,
-                        max_new_tokens=max_length,
-                        do_sample=False,
-                        pad_token_id=tokenizer.pad_token_id
-                    )
-        except RuntimeError as e:
-            logger.warning(f"Error during generation with temperature={temperature}: {e}")
-            logger.info("Falling back to greedy decoding (temperature=0.0)")
             with torch.no_grad():
                 outputs = model.generate(
                     input_ids=inputs.input_ids,
                     attention_mask=inputs.attention_mask,
                     max_new_tokens=max_length,
-                    do_sample=False,  # Use greedy decoding instead
-                    pad_token_id=tokenizer.pad_token_id
+                    do_sample=False,  # Always use greedy decoding for stability
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id
+                )
+        except RuntimeError as e:
+            logger.warning(f"Error during generation: {e}")
+            logger.info("Trying with even simpler parameters...")
+            with torch.no_grad():
+                outputs = model.generate(
+                    input_ids=inputs.input_ids,
+                    max_new_tokens=max_length,
+                    do_sample=False
                 )
         
-        # Decode and extract the generated part (after the prompt)
+        # Process each output
         for j, output in enumerate(outputs):
-            # Get the full generated text
+            # Get the full generated text for debugging
             full_text = tokenizer.decode(output, skip_special_tokens=True)
             
-            # Extract the response part (everything after the prompt)
-            prompt_text = formatted_prompts[j]
-            if prompt_text in full_text:
-                # If we can find the prompt in the output, extract everything after it
-                response = full_text[full_text.find(prompt_text) + len(prompt_text):].strip()
-            else:
-                # If we can't find the prompt exactly, use a more general approach
-                # Get the original input length to separate prompt from generation
-                input_length = inputs.input_ids[j].shape[0]
-                # Decode only the generated part
-                response = tokenizer.decode(output[input_length:], skip_special_tokens=True).strip()
+            # Get input length in tokens
+            input_length = inputs.input_ids[j].shape[0]
             
-            # If response is still empty, use the full text minus the first few tokens
-            if not response:
-                response = full_text
-                # Try to remove the prompt if it appears at the beginning
-                for prefix in [prompt_text, prompt_text.strip()]:
-                    if response.startswith(prefix):
-                        response = response[len(prefix):].strip()
-                        break
+            # Decode only the generated part
+            generated_text = tokenizer.decode(output[input_length:], skip_special_tokens=True).strip()
             
-            generated_responses.append(response)
+            # Save for debugging
+            debug_outputs.append({
+                "prompt": formatted_prompts[j],
+                "full_output": full_text,
+                "input_length": input_length,
+                "total_length": len(output),
+                "generated_part": generated_text
+            })
+            
+            # If we got an empty string, try to extract from full text
+            if not generated_text:
+                # Try to find where the prompt ends in the full text
+                prompt = formatted_prompts[j]
+                if prompt in full_text:
+                    pos = full_text.find(prompt) + len(prompt)
+                    generated_text = full_text[pos:].strip()
+            
+            # If still empty, use a simple approach - just take the last half of tokens
+            if not generated_text:
+                half_point = len(output) // 2
+                generated_text = tokenizer.decode(output[half_point:], skip_special_tokens=True).strip()
+            
+            generated_responses.append(generated_text)
         
         # Log progress
         if (i + batch_size) % 20 == 0 or (i + batch_size) >= len(examples):
             logger.info(f"Generated {min(i + batch_size, len(examples))}/{len(examples)} responses")
+    
+    # Save debug info
+    with open("generation_debug.json", "w") as f:
+        json.dump(debug_outputs, f, indent=2)
+    
+    logger.info(f"Debug information saved to generation_debug.json")
     
     return generated_responses
 
