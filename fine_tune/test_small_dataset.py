@@ -84,18 +84,23 @@ def generate_response(model, tokenizer, prompt, temperature=0.0, max_new_tokens=
         truncation=True,
     ).to(model.device)
     
-    # Generate
+    # Get input length for later use
+    input_length = inputs.input_ids.shape[1]
+    
+    # Generate with more aggressive settings
     with torch.no_grad():
         outputs = model.generate(
             input_ids=inputs.input_ids,
             attention_mask=inputs.attention_mask,
             max_new_tokens=max_new_tokens,
-            min_new_tokens=5,  # Force at least 5 new tokens
+            min_new_tokens=20,  # Force at least 20 new tokens
             do_sample=(temperature > 0),
             temperature=temperature if temperature > 0 else 1.0,
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id,
-            repetition_penalty=1.2
+            repetition_penalty=1.5,  # Increase repetition penalty
+            no_repeat_ngram_size=3,  # Prevent repeating 3-grams
+            num_beams=5  # Use beam search for better results
         )
     
     # Decode the full output
@@ -106,8 +111,18 @@ def generate_response(model, tokenizer, prompt, temperature=0.0, max_new_tokens=
         response = full_output.split("[/INST]", 1)[1].strip()
     else:
         # Fallback: use the token-based approach
-        input_length = inputs.input_ids.shape[1]
         response = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True).strip()
+    
+    # If response is still empty, try a different approach
+    if not response:
+        # Try to find where the prompt ends in the full text
+        if formatted_prompt in full_output:
+            pos = full_output.find(formatted_prompt) + len(formatted_prompt)
+            response = full_output[pos:].strip()
+        else:
+            # Last resort: just take the last 75% of tokens
+            cutoff_point = int(len(outputs[0]) * 0.25)  # Skip first 25%
+            response = tokenizer.decode(outputs[0][cutoff_point:], skip_special_tokens=True).strip()
     
     return response, full_output
 
