@@ -56,6 +56,11 @@ class PromptResponseDataset(Dataset):
             self.examples = data_path_or_examples
         
         logger.info(f"Loaded {len(self.examples)} examples")
+        
+        # Print a sample example for debugging
+        if len(self.examples) > 0:
+            sample = self.examples[0]
+            logger.info(f"Sample example - Prompt: '{sample['prompt']}', Response: '{sample['response']}'")
     
     def __len__(self):
         return len(self.examples)
@@ -65,12 +70,19 @@ class PromptResponseDataset(Dataset):
         prompt = example["prompt"]
         response = example["response"]
         
-        # Format as instruction following format with explicit BOS/EOS tokens
-        # Format: <s>[INST] {prompt} [/INST] {response}</s>
-        # The <s> and </s> tokens will be added automatically by the tokenizer if add_special_tokens=True
+        # Format as instruction following format
+        # We'll use a simpler format without special tokens to avoid confusion
         full_text = f"[INST] {prompt} [/INST] {response}"
         
-        # Tokenize with explicit padding to max_length
+        # Log the full text for debugging (only for the first few examples)
+        if idx < 3:
+            logger.info(f"Example {idx} - Full text: '{full_text}'")
+        
+        # Tokenize without padding first to get the token counts
+        prompt_tokens = self.tokenizer.encode(f"[INST] {prompt} [/INST]", add_special_tokens=True)
+        full_tokens = self.tokenizer.encode(full_text, add_special_tokens=True)
+        
+        # Now tokenize with padding to max_length
         encodings = self.tokenizer(
             full_text,
             max_length=self.max_length,
@@ -86,8 +98,6 @@ class PromptResponseDataset(Dataset):
         item["labels"] = item["input_ids"].clone()
         
         # Mask out the prompt part in labels (we only want to train on generating the response)
-        # Get the position of the [/INST] token to ensure proper masking
-        prompt_tokens = self.tokenizer.encode(f"[INST] {prompt} [/INST]", add_special_tokens=False)
         prompt_length = len(prompt_tokens)
         
         # Make sure we don't mask beyond the sequence length
@@ -95,6 +105,15 @@ class PromptResponseDataset(Dataset):
         
         # Set labels for the prompt part to -100 (ignored in loss calculation)
         item["labels"][:prompt_length] = -100  # -100 is the ignore index for CrossEntropyLoss
+        
+        # Log the masking for debugging (only for the first few examples)
+        if idx < 3:
+            logger.info(f"Example {idx} - Masked {prompt_length} tokens out of {len(item['labels'])}")
+            # Show a few tokens before and after masking point
+            if prompt_length < len(item["labels"]):
+                before_mask = self.tokenizer.decode(item["input_ids"][prompt_length-5:prompt_length])
+                after_mask = self.tokenizer.decode(item["input_ids"][prompt_length:prompt_length+5])
+                logger.info(f"Tokens before mask: '{before_mask}', Tokens after mask: '{after_mask}'")
         
         return item
 
@@ -219,7 +238,7 @@ def train(args):
     # Define training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
-        num_train_epochs=args.num_iterations,  # Using iterations as epochs
+        num_train_epochs=args.num_train_epochs,
         per_device_train_batch_size=args.per_device_train_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         logging_dir=f"{args.output_dir}/logs",
@@ -244,11 +263,29 @@ def train(args):
         load_best_model_at_end=False,  # Don't load best model, we want the final model
     )
     
-    # Create data collator
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False
-    )
+    # Create data collator - Use a custom data collator that doesn't mask labels
+    class CustomDataCollator:
+        def __init__(self, tokenizer):
+            self.tokenizer = tokenizer
+            
+        def __call__(self, features):
+            batch = {}
+            
+            # Process input_ids and attention_mask
+            input_ids = torch.stack([f["input_ids"] for f in features])
+            attention_mask = torch.stack([f["attention_mask"] for f in features])
+            
+            # Process labels - don't mask them further
+            labels = torch.stack([f["labels"] for f in features])
+            
+            batch["input_ids"] = input_ids
+            batch["attention_mask"] = attention_mask
+            batch["labels"] = labels
+            
+            return batch
+    
+    # Use the custom data collator
+    data_collator = CustomDataCollator(tokenizer)
     
     # Create iteration callback
     iteration_callback = IterationCallback(args)
@@ -263,11 +300,8 @@ def train(args):
         callbacks=callbacks
     )
     
-    # Make tokenizer accessible to the callback
-    iteration_callback.trainer = trainer
-    
     # Train the model
-    logger.info(f"Starting training for {args.num_iterations} iterations...")
+    logger.info("Starting training...")
     trainer.train()
     
     # Save the final model
@@ -275,12 +309,18 @@ def train(args):
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
     
+    # Save the training arguments
+    with open(os.path.join(args.output_dir, "training_args.bin"), "wb") as f:
+        torch.save(args, f)
+    
+    # Save the iteration results
+    if hasattr(iteration_callback, "results"):
+        with open(os.path.join(args.output_dir, "iteration_results.json"), "w") as f:
+            json.dump(iteration_callback.results, f, indent=2)
+    
     logger.info("Training complete!")
     
-    # Print summary of iterations
-    logger.info(f"Completed {len(iteration_callback.iteration_results)} iterations")
-    for i, result in enumerate(iteration_callback.iteration_results):
-        logger.info(f"Iteration {i+1}: Checkpoint saved to {result['checkpoint_dir']}")
+    return model, tokenizer
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune Pythia 2.8B on prompt-response data")
@@ -339,10 +379,10 @@ def parse_args():
         help="Ratio of warmup steps"
     )
     parser.add_argument(
-        "--num_iterations",
+        "--num_train_epochs",
         type=int,
         default=3,
-        help="Number of training iterations"
+        help="Number of training epochs"
     )
     parser.add_argument(
         "--seed",

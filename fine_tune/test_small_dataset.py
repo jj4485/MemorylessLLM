@@ -72,59 +72,99 @@ def load_model_and_tokenizer(model_path):
     return model, tokenizer
 
 def generate_response(model, tokenizer, prompt, temperature=0.0, max_new_tokens=100):
-    """Generate a response for a single prompt."""
+    """Generate a response for a single prompt using a more direct approach."""
     # Format prompt with instruction template
     formatted_prompt = f"[INST] {prompt} [/INST]"
     
-    # Tokenize
-    inputs = tokenizer(
-        formatted_prompt,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-    ).to(model.device)
+    # Tokenize the prompt
+    input_tokens = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
     
-    # Get input length for later use
-    input_length = inputs.input_ids.shape[1]
+    # Get the length of the input for later use
+    input_length = input_tokens.input_ids.shape[1]
     
-    # Generate with more aggressive settings
+    # Generate with a completely different approach - use the model's forward pass directly
     with torch.no_grad():
-        outputs = model.generate(
-            input_ids=inputs.input_ids,
-            attention_mask=inputs.attention_mask,
-            max_new_tokens=max_new_tokens,
-            min_new_tokens=20,  # Force at least 20 new tokens
-            do_sample=(temperature > 0),
-            temperature=temperature if temperature > 0 else 1.0,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            repetition_penalty=1.5,  # Increase repetition penalty
-            no_repeat_ngram_size=3,  # Prevent repeating 3-grams
-            num_beams=5  # Use beam search for better results
-        )
+        # First try with standard generation
+        try:
+            outputs = model.generate(
+                input_ids=input_tokens.input_ids,
+                attention_mask=input_tokens.attention_mask,
+                max_new_tokens=max_new_tokens,
+                min_new_tokens=10,
+                do_sample=False,  # Use greedy decoding for deterministic results
+                num_beams=1,      # Simple beam search
+                early_stopping=True,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id
+            )
+            
+            # Decode only the new tokens
+            generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True).strip()
+            full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # Check for the ampersand issue
+            if '&' * 10 in generated_text:
+                raise ValueError("Detected ampersand issue, trying alternative method")
+                
+            # If we got an empty response or just whitespace, try alternative method
+            if not generated_text or generated_text.isspace():
+                raise ValueError("Empty response, trying alternative method")
+                
+        except Exception as e:
+            print(f"Standard generation failed: {e}")
+            # Alternative approach: use the model's forward pass directly
+            try:
+                # Get logits from the model
+                outputs = model(input_tokens.input_ids, attention_mask=input_tokens.attention_mask)
+                logits = outputs.logits
+                
+                # Get the last token's logits
+                last_token_logits = logits[0, -1, :]
+                
+                # Get the top 10 tokens
+                top_k_tokens = torch.topk(last_token_logits, 10)
+                
+                # Build a response token by token
+                response_tokens = input_tokens.input_ids[0].tolist()
+                
+                # Generate 20 new tokens manually
+                for _ in range(20):
+                    # Get model output for current sequence
+                    outputs = model(torch.tensor([response_tokens]).to(model.device))
+                    next_token_logits = outputs.logits[0, -1, :]
+                    
+                    # Get the most likely next token
+                    next_token = torch.argmax(next_token_logits).item()
+                    
+                    # Add to our sequence
+                    response_tokens.append(next_token)
+                    
+                    # Stop if we hit the EOS token
+                    if next_token == tokenizer.eos_token_id:
+                        break
+                
+                # Decode the full sequence and extract the response
+                full_output = tokenizer.decode(response_tokens, skip_special_tokens=True)
+                
+                # Extract just the response part
+                if "[/INST]" in full_output:
+                    generated_text = full_output.split("[/INST]", 1)[1].strip()
+                else:
+                    # Fallback to just taking the newly generated part
+                    generated_text = tokenizer.decode(response_tokens[input_length:], skip_special_tokens=True).strip()
+                
+            except Exception as e:
+                print(f"Alternative generation also failed: {e}")
+                # Last resort - just return the ground truth as a placeholder
+                # This is just for debugging - in a real system you wouldn't do this
+                generated_text = "GENERATION FAILED"
+                full_output = formatted_prompt + " GENERATION FAILED"
     
-    # Decode the full output
-    full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Final check - if we still have the ampersand issue or empty response, use a placeholder
+    if '&' * 10 in generated_text or not generated_text or generated_text.isspace():
+        generated_text = "GENERATION FAILED - MODEL ISSUE"
     
-    # Extract the response part (after the instruction)
-    if "[/INST]" in full_output:
-        response = full_output.split("[/INST]", 1)[1].strip()
-    else:
-        # Fallback: use the token-based approach
-        response = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True).strip()
-    
-    # If response is still empty, try a different approach
-    if not response:
-        # Try to find where the prompt ends in the full text
-        if formatted_prompt in full_output:
-            pos = full_output.find(formatted_prompt) + len(formatted_prompt)
-            response = full_output[pos:].strip()
-        else:
-            # Last resort: just take the last 75% of tokens
-            cutoff_point = int(len(outputs[0]) * 0.25)  # Skip first 25%
-            response = tokenizer.decode(outputs[0][cutoff_point:], skip_special_tokens=True).strip()
-    
-    return response, full_output
+    return generated_text, full_output
 
 def main():
     args = parse_args()
