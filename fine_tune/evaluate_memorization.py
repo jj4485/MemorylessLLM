@@ -48,9 +48,9 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
         batch = examples[i:i+batch_size]
         prompts = [example["prompt"] for example in batch]
         
-        # Try different prompt formats
-        # Format 1: Just the prompt
-        formatted_prompts = prompts.copy()
+        # Format prompts to match training format
+        # During training, the format was: "[INST] {prompt} [/INST] {response}"
+        formatted_prompts = [f"[INST] {prompt} [/INST]" for prompt in prompts]
         
         # Tokenize
         inputs = tokenizer(
