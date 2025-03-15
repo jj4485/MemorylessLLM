@@ -8,7 +8,7 @@ using higher learning rates and more iterations.
 import os
 import argparse
 import logging
-from run_finetune_pythia import main as run_finetune
+import subprocess
 
 # Set up logging
 logging.basicConfig(
@@ -61,19 +61,20 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # Convert args to the format expected by run_finetune_pythia.py
-    finetune_args = [
+    # Build command for fine-tuning
+    cmd = [
+        "python", "finetune_pythia.py",
         "--model_name", "EleutherAI/pythia-2.8b",
         "--dataset_file", args.dataset_file,
         "--output_dir", args.output_dir,
-        "--num_iterations", str(args.num_iterations),
-        "--batch_size", str(args.batch_size),
+        "--num_train_epochs", str(args.num_iterations),
+        "--per_device_train_batch_size", str(args.batch_size),
         "--learning_rate", str(args.learning_rate),
         "--save_steps", str(args.evaluate_every),
         "--logging_steps", str(args.evaluate_every),
         "--warmup_ratio", "0.05",
         "--weight_decay", "0.01",
-        "--gradient_accumulation", "4",
+        "--gradient_accumulation_steps", "4",
         "--max_seq_length", "512"  # Smaller sequence length for efficiency
     ]
     
@@ -81,8 +82,11 @@ def main():
     logger.info(f"Starting fine-tuning on small dataset: {args.dataset_file}")
     logger.info(f"Using {args.num_iterations} iterations with learning rate {args.learning_rate}")
     
-    # Call the main function from run_finetune_pythia.py
-    run_finetune(finetune_args)
+    # Print the command
+    logger.info("Running command: " + " ".join(cmd))
+    
+    # Execute the command
+    subprocess.run(cmd)
     
     logger.info(f"Fine-tuning complete. Model saved to {args.output_dir}")
     logger.info(f"To test the model, run: python test_small_dataset.py --model_path {args.output_dir}")
