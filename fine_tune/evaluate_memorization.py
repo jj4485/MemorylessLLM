@@ -61,25 +61,27 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
             max_length=max_length
         ).to(model.device)
         
-        # Generate with simple parameters
+        # Generate with improved parameters
         try:
             with torch.no_grad():
-                # Use greedy decoding for deterministic results
                 outputs = model.generate(
                     input_ids=inputs.input_ids,
                     attention_mask=inputs.attention_mask,
-                    max_new_tokens=max_length,
-                    do_sample=False,
+                    max_new_tokens=100,  # Generate more tokens
+                    min_new_tokens=5,    # Force at least 5 new tokens
+                    do_sample=False,     # Use greedy decoding for deterministic results
                     pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id
+                    eos_token_id=tokenizer.eos_token_id,
+                    repetition_penalty=1.2  # Discourage repetition
                 )
         except RuntimeError as e:
             logger.warning(f"Error during generation: {e}")
-            logger.info("Trying with even simpler parameters...")
+            logger.info("Trying with simpler parameters...")
             with torch.no_grad():
                 outputs = model.generate(
                     input_ids=inputs.input_ids,
-                    max_new_tokens=max_length,
+                    max_new_tokens=50,
+                    min_new_tokens=5,
                     do_sample=False
                 )
         
@@ -90,10 +92,6 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
             
             # Get input length in tokens
             input_length = inputs.input_ids[j].shape[0]
-            
-            # Get the original prompt for reference
-            original_prompt = prompts[j]
-            formatted_prompt = formatted_prompts[j]
             
             # Try multiple methods to extract the response
             
@@ -107,8 +105,8 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
             
             # Save detailed debug info
             debug_outputs.append({
-                "original_prompt": original_prompt,
-                "formatted_prompt": formatted_prompt,
+                "original_prompt": prompts[j],
+                "formatted_prompt": formatted_prompts[j],
                 "full_output": full_text,
                 "input_length": input_length,
                 "total_length": len(output),

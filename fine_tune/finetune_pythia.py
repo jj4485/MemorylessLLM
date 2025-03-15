@@ -65,10 +65,12 @@ class PromptResponseDataset(Dataset):
         prompt = example["prompt"]
         response = example["response"]
         
-        # Format as instruction following format
-        # Format: <s>[INST] {prompt} [/INST] {response} </s>
+        # Format as instruction following format with explicit BOS/EOS tokens
+        # Format: <s>[INST] {prompt} [/INST] {response}</s>
+        # The <s> and </s> tokens will be added automatically by the tokenizer if add_special_tokens=True
         full_text = f"[INST] {prompt} [/INST] {response}"
         
+        # Tokenize with explicit padding to max_length
         encodings = self.tokenizer(
             full_text,
             max_length=self.max_length,
@@ -84,8 +86,14 @@ class PromptResponseDataset(Dataset):
         item["labels"] = item["input_ids"].clone()
         
         # Mask out the prompt part in labels (we only want to train on generating the response)
+        # Get the position of the [/INST] token to ensure proper masking
         prompt_tokens = self.tokenizer.encode(f"[INST] {prompt} [/INST]", add_special_tokens=False)
         prompt_length = len(prompt_tokens)
+        
+        # Make sure we don't mask beyond the sequence length
+        prompt_length = min(prompt_length, len(item["labels"]))
+        
+        # Set labels for the prompt part to -100 (ignored in loss calculation)
         item["labels"][:prompt_length] = -100  # -100 is the ignore index for CrossEntropyLoss
         
         return item
@@ -218,9 +226,9 @@ def train(args):
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         save_total_limit=3,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        warmup_ratio=args.warmup_ratio,
+        learning_rate=0.001,  # Increased learning rate for better memorization
+        weight_decay=0.01,
+        warmup_ratio=0.03,
         lr_scheduler_type="cosine",
         report_to=None,  # Disable TensorBoard
         gradient_checkpointing=True,
@@ -230,6 +238,10 @@ def train(args):
         dataloader_num_workers=args.dataloader_num_workers,
         remove_unused_columns=False,  # Important for our custom dataset
         seed=args.seed,
+        max_grad_norm=1.0,  # Clip gradients to prevent instability
+        group_by_length=True,  # Group similar length sequences for efficiency
+        save_strategy="steps",  # Save by steps not epochs
+        load_best_model_at_end=False,  # Don't load best model, we want the final model
     )
     
     # Create data collator

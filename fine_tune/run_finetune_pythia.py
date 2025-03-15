@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument(
         "--num_iterations",
         type=int,
-        default=3,
+        default=20,
         help="Number of training iterations"
     )
     parser.add_argument(
@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=2e-4,
+        default=1e-3,
         help="Learning rate"
     )
     parser.add_argument(
