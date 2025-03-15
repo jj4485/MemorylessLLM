@@ -47,8 +47,9 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
         batch = examples[i:i+batch_size]
         prompts = [example["prompt"] for example in batch]
         
-        # Format prompts for the model
-        formatted_prompts = [f"[INST] {prompt} [/INST]" for prompt in prompts]
+        # Format prompts for the model - try different formats
+        # Format 1: Simple instruction format
+        formatted_prompts = [f"{prompt}" for prompt in prompts]
         
         # Tokenize
         inputs = tokenizer(
@@ -59,17 +60,33 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
             max_length=max_length
         ).to(model.device)
         
-        # Generate - use temperature=0.0 if there are CUDA sampling errors
+        # Generate with proper handling for temperature
         try:
             with torch.no_grad():
-                outputs = model.generate(
-                    input_ids=inputs.input_ids,
-                    attention_mask=inputs.attention_mask,
-                    max_new_tokens=max_length,
-                    do_sample=(temperature > 0),
-                    temperature=temperature if temperature > 0 else 1.0,
-                    pad_token_id=tokenizer.pad_token_id
-                )
+                if temperature > 0:
+                    # Use custom generation for temperature > 0
+                    outputs = model.generate(
+                        input_ids=inputs.input_ids,
+                        attention_mask=inputs.attention_mask,
+                        max_new_tokens=max_length,
+                        do_sample=True,
+                        temperature=temperature,
+                        pad_token_id=tokenizer.pad_token_id,
+                        # Add these parameters to handle numerical instabilities
+                        top_k=50,  # Limit to top 50 tokens
+                        top_p=0.95,  # Nucleus sampling
+                        renormalize_logits=True,  # Ensure logits are properly normalized
+                        num_return_sequences=1
+                    )
+                else:
+                    # Use greedy decoding for temperature=0
+                    outputs = model.generate(
+                        input_ids=inputs.input_ids,
+                        attention_mask=inputs.attention_mask,
+                        max_new_tokens=max_length,
+                        do_sample=False,
+                        pad_token_id=tokenizer.pad_token_id
+                    )
         except RuntimeError as e:
             logger.warning(f"Error during generation with temperature={temperature}: {e}")
             logger.info("Falling back to greedy decoding (temperature=0.0)")
@@ -82,18 +99,33 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
                     pad_token_id=tokenizer.pad_token_id
                 )
         
-        # Decode and extract only the generated part (after the prompt)
+        # Decode and extract the generated part (after the prompt)
         for j, output in enumerate(outputs):
-            # Get the original input length to separate prompt from generation
-            input_length = inputs.input_ids[j].shape[0]
+            # Get the full generated text
+            full_text = tokenizer.decode(output, skip_special_tokens=True)
             
-            # Decode only the generated part (excluding the prompt)
-            generated_text = tokenizer.decode(output[input_length:], skip_special_tokens=True)
+            # Extract the response part (everything after the prompt)
+            prompt_text = formatted_prompts[j]
+            if prompt_text in full_text:
+                # If we can find the prompt in the output, extract everything after it
+                response = full_text[full_text.find(prompt_text) + len(prompt_text):].strip()
+            else:
+                # If we can't find the prompt exactly, use a more general approach
+                # Get the original input length to separate prompt from generation
+                input_length = inputs.input_ids[j].shape[0]
+                # Decode only the generated part
+                response = tokenizer.decode(output[input_length:], skip_special_tokens=True).strip()
             
-            # Clean up any leading/trailing whitespace
-            generated_text = generated_text.strip()
+            # If response is still empty, use the full text minus the first few tokens
+            if not response:
+                response = full_text
+                # Try to remove the prompt if it appears at the beginning
+                for prefix in [prompt_text, prompt_text.strip()]:
+                    if response.startswith(prefix):
+                        response = response[len(prefix):].strip()
+                        break
             
-            generated_responses.append(generated_text)
+            generated_responses.append(response)
         
         # Log progress
         if (i + batch_size) % 20 == 0 or (i + batch_size) >= len(examples):

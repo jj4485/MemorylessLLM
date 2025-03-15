@@ -171,12 +171,12 @@ def main():
     
     # Print metrics progression
     if all_results:
-        print("\nMetrics progression across iterations:")
-        print(f"{'Iteration':<10} {'Exact Match':<12} {'BLEU':<8} {'ROUGE-L':<8} {'Cosine Sim':<10}")
+        print("\nExact Match progression across iterations:")
+        print(f"{'Iteration':<10} {'Exact Match':<12} {'Matches':<8} {'Total':<8}")
         print("-" * 50)
         
-        for result in all_results:
-            print(f"{result['iteration']:<10} {result['exact_match']:<12.4f} {result['bleu']:<8.4f} {result['rougeL']:<8.4f} {result['cosine_similarity']:<10.4f}")
+        for result in sorted(all_results, key=lambda x: x['iteration'] if x['iteration'] != "final" else float('inf')):
+            print(f"{result['iteration']:<10} {result['exact_match']:<12.4f} {result['num_matches']:<8} {result['total_samples']:<8}")
     
     print(f"\nDetailed results saved to {args.output_dir}")
 
