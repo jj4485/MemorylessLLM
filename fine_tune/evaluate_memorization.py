@@ -2,7 +2,7 @@
 Evaluate model memorization on the prompt-response dataset.
 
 This script evaluates how well a fine-tuned model has memorized the prompt-response pairs
-by measuring exact match, BLEU, ROUGE, and cosine similarity metrics.
+by measuring exact match accuracy with efficient batching for speed.
 """
 
 import os
@@ -13,43 +13,32 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from rouge_score import rouge_scorer
-from sklearn.metrics.pairwise import cosine_similarity
-import nltk
 import random
-
-# Download necessary NLTK data
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
 def load_dataset(dataset_file, num_samples=None):
-    """Load the dataset and optionally sample a subset."""
-    logger.info(f"Loading dataset from {dataset_file}")
-    with open(dataset_file, 'r', encoding='utf-8') as f:
-        examples = json.load(f)
+    """Load the dataset from a JSON file."""
+    with open(dataset_file, 'r') as f:
+        data = json.load(f)
     
-    logger.info(f"Loaded {len(examples)} examples")
+    examples = data["examples"] if isinstance(data, dict) and "examples" in data else data
     
+    # Sample examples if needed
     if num_samples and num_samples < len(examples):
-        logger.info(f"Sampling {num_samples} examples for evaluation")
-        return random.sample(examples, num_samples)
+        examples = random.sample(examples, num_samples)
     
     return examples
 
-def generate_responses(model, tokenizer, examples, batch_size=4, max_length=512, temperature=0.7):
-    """Generate responses for the given prompts."""
-    logger.info("Generating responses...")
+def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512, temperature=0.0):
+    """Generate responses for the given prompts with efficient batching."""
+    logger.info(f"Generating responses with batch size {batch_size}...")
     
     generated_responses = []
     
@@ -70,127 +59,70 @@ def generate_responses(model, tokenizer, examples, batch_size=4, max_length=512,
             max_length=max_length
         ).to(model.device)
         
-        # Generate
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=inputs.input_ids,
-                attention_mask=inputs.attention_mask,
-                max_new_tokens=max_length,
-                do_sample=(temperature > 0),
-                temperature=temperature if temperature > 0 else 1.0,
-                pad_token_id=tokenizer.pad_token_id
-            )
+        # Generate - use temperature=0.0 if there are CUDA sampling errors
+        try:
+            with torch.no_grad():
+                outputs = model.generate(
+                    input_ids=inputs.input_ids,
+                    attention_mask=inputs.attention_mask,
+                    max_new_tokens=max_length,
+                    do_sample=(temperature > 0),
+                    temperature=temperature if temperature > 0 else 1.0,
+                    pad_token_id=tokenizer.pad_token_id
+                )
+        except RuntimeError as e:
+            logger.warning(f"Error during generation with temperature={temperature}: {e}")
+            logger.info("Falling back to greedy decoding (temperature=0.0)")
+            with torch.no_grad():
+                outputs = model.generate(
+                    input_ids=inputs.input_ids,
+                    attention_mask=inputs.attention_mask,
+                    max_new_tokens=max_length,
+                    do_sample=False,  # Use greedy decoding instead
+                    pad_token_id=tokenizer.pad_token_id
+                )
         
         # Decode and extract only the generated part (after the prompt)
         for j, output in enumerate(outputs):
-            prompt_tokens = tokenizer.encode(formatted_prompts[j], add_special_tokens=True, return_tensors="pt")[0]
-            prompt_length = len(prompt_tokens)
+            # Get the original input length to separate prompt from generation
+            input_length = inputs.input_ids[j].shape[0]
             
-            # Extract only the generated part
-            generated_text = tokenizer.decode(output[prompt_length:], skip_special_tokens=True)
-            generated_responses.append(generated_text.strip())
+            # Decode only the generated part (excluding the prompt)
+            generated_text = tokenizer.decode(output[input_length:], skip_special_tokens=True)
+            
+            # Clean up any leading/trailing whitespace
+            generated_text = generated_text.strip()
+            
+            generated_responses.append(generated_text)
         
         # Log progress
-        if (i + batch_size) % (batch_size * 5) == 0 or (i + batch_size) >= len(examples):
-            logger.info(f"Generated {i + len(batch)}/{len(examples)} responses")
+        if (i + batch_size) % 20 == 0 or (i + batch_size) >= len(examples):
+            logger.info(f"Generated {min(i + batch_size, len(examples))}/{len(examples)} responses")
     
     return generated_responses
 
 def compute_exact_match(generated_responses, ground_truth_responses):
-    """Compute exact match score."""
+    """Compute exact match score and return details of matches."""
     exact_matches = 0
-    for gen, truth in zip(generated_responses, ground_truth_responses):
-        if gen.strip() == truth.strip():
+    match_details = []
+    
+    for i, (gen, truth) in enumerate(zip(generated_responses, ground_truth_responses)):
+        is_match = gen.strip() == truth.strip()
+        if is_match:
             exact_matches += 1
-    
-    return exact_matches / len(generated_responses) if generated_responses else 0
-
-def compute_bleu(generated_responses, ground_truth_responses):
-    """Compute BLEU score."""
-    smoothing = SmoothingFunction().method1
-    bleu_scores = []
-    
-    for gen, truth in zip(generated_responses, ground_truth_responses):
-        gen_tokens = nltk.word_tokenize(gen.lower())
-        truth_tokens = nltk.word_tokenize(truth.lower())
         
-        # BLEU requires a list of references
-        bleu = sentence_bleu([truth_tokens], gen_tokens, smoothing_function=smoothing)
-        bleu_scores.append(bleu)
+        match_details.append({
+            "index": i,
+            "is_match": is_match,
+            "generated": gen.strip(),
+            "ground_truth": truth.strip()
+        })
     
-    return sum(bleu_scores) / len(bleu_scores) if bleu_scores else 0
+    match_rate = exact_matches / len(generated_responses) if generated_responses else 0
+    return match_rate, match_details
 
-def compute_rouge(generated_responses, ground_truth_responses):
-    """Compute ROUGE scores."""
-    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-    rouge_scores = {
-        'rouge1': 0.0,
-        'rouge2': 0.0,
-        'rougeL': 0.0
-    }
-    
-    for gen, truth in zip(generated_responses, ground_truth_responses):
-        scores = scorer.score(truth, gen)
-        for key in rouge_scores:
-            rouge_scores[key] += scores[key].fmeasure
-    
-    # Average the scores
-    for key in rouge_scores:
-        rouge_scores[key] /= len(generated_responses) if generated_responses else 1
-    
-    return rouge_scores
-
-def compute_cosine_similarity(generated_responses, ground_truth_responses, tokenizer):
-    """Compute cosine similarity between generated and ground truth responses."""
-    # Tokenize responses
-    gen_encodings = tokenizer(
-        generated_responses,
-        padding=True,
-        truncation=True,
-        return_tensors="pt"
-    )
-    
-    truth_encodings = tokenizer(
-        ground_truth_responses,
-        padding=True,
-        truncation=True,
-        return_tensors="pt"
-    )
-    
-    # Get embeddings (using mean pooling of token embeddings)
-    gen_embeddings = []
-    truth_embeddings = []
-    
-    # Simple mean pooling of token embeddings
-    for i in range(len(generated_responses)):
-        gen_tokens = gen_encodings.input_ids[i]
-        gen_mask = gen_encodings.attention_mask[i]
-        gen_embedding = torch.mean(
-            torch.stack([tokenizer.get_input_embeddings()(gen_tokens[j]) * gen_mask[j] 
-                         for j in range(len(gen_tokens))]), 
-            dim=0
-        ).detach().cpu().numpy()
-        gen_embeddings.append(gen_embedding)
-        
-        truth_tokens = truth_encodings.input_ids[i]
-        truth_mask = truth_encodings.attention_mask[i]
-        truth_embedding = torch.mean(
-            torch.stack([tokenizer.get_input_embeddings()(truth_tokens[j]) * truth_mask[j] 
-                         for j in range(len(truth_tokens))]), 
-            dim=0
-        ).detach().cpu().numpy()
-        truth_embeddings.append(truth_embedding)
-    
-    # Compute cosine similarity for each pair
-    similarities = []
-    for gen_emb, truth_emb in zip(gen_embeddings, truth_embeddings):
-        similarity = cosine_similarity([gen_emb], [truth_emb])[0][0]
-        similarities.append(similarity)
-    
-    return sum(similarities) / len(similarities) if similarities else 0
-
-def evaluate_memorization(model_path, dataset_file, output_dir, num_samples=100, batch_size=4, temperature=0.7, seed=42):
-    """Evaluate model memorization on the dataset."""
+def evaluate_memorization(model_path, dataset_file, output_dir, num_samples=100, batch_size=8, temperature=0.0, seed=42):
+    """Evaluate model memorization on the dataset using only exact match."""
     # Set seed for reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -200,7 +132,18 @@ def evaluate_memorization(model_path, dataset_file, output_dir, num_samples=100,
     
     # Load model and tokenizer
     logger.info(f"Loading model from {model_path}")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    
+    # Try to load tokenizer from checkpoint, fall back to original if needed
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except (OSError, EnvironmentError):
+        logger.info(f"Could not load tokenizer from {model_path}, falling back to original Pythia tokenizer")
+        tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-2.8b")
+    
+    # Set padding side to left for proper generation
+    tokenizer.padding_side = 'left'
+    
+    # Load model
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
         torch_dtype=torch.float16,
@@ -212,50 +155,41 @@ def evaluate_memorization(model_path, dataset_file, output_dir, num_samples=100,
         tokenizer.pad_token = tokenizer.eos_token
     
     # Load dataset
+    logger.info(f"Loading dataset from {dataset_file}")
     examples = load_dataset(dataset_file, num_samples)
+    logger.info(f"Loaded {len(examples)} examples for evaluation")
     
     # Generate responses
     generated_responses = generate_responses(
-        model, tokenizer, examples, batch_size, temperature=temperature
+        model, tokenizer, examples, batch_size=batch_size, temperature=temperature
     )
     
     # Get ground truth responses
     ground_truth_responses = [example["response"] for example in examples]
     
-    # Compute metrics
-    logger.info("Computing evaluation metrics...")
-    
-    exact_match = compute_exact_match(generated_responses, ground_truth_responses)
-    logger.info(f"Exact Match: {exact_match:.4f}")
-    
-    bleu = compute_bleu(generated_responses, ground_truth_responses)
-    logger.info(f"BLEU: {bleu:.4f}")
-    
-    rouge_scores = compute_rouge(generated_responses, ground_truth_responses)
-    logger.info(f"ROUGE-1: {rouge_scores['rouge1']:.4f}")
-    logger.info(f"ROUGE-2: {rouge_scores['rouge2']:.4f}")
-    logger.info(f"ROUGE-L: {rouge_scores['rougeL']:.4f}")
-    
-    cosine_sim = compute_cosine_similarity(generated_responses, ground_truth_responses, tokenizer)
-    logger.info(f"Cosine Similarity: {cosine_sim:.4f}")
+    # Compute exact match
+    logger.info("Computing exact match...")
+    match_rate, match_details = compute_exact_match(generated_responses, ground_truth_responses)
+    logger.info(f"Exact Match: {match_rate:.4f} ({int(match_rate * len(examples))}/{len(examples)})")
     
     # Save results
     results = {
-        "exact_match": exact_match,
-        "bleu": bleu,
-        "rouge1": rouge_scores["rouge1"],
-        "rouge2": rouge_scores["rouge2"],
-        "rougeL": rouge_scores["rougeL"],
-        "cosine_similarity": float(cosine_sim)
+        "exact_match": match_rate,
+        "num_matches": int(match_rate * len(examples)),
+        "total_samples": len(examples),
+        "model_path": model_path,
+        "dataset_file": dataset_file,
+        "batch_size": batch_size,
+        "temperature": temperature
     }
     
     with open(os.path.join(output_dir, "metrics_summary.json"), 'w') as f:
         json.dump(results, f, indent=2)
     
-    # Save generated responses alongside ground truth
-    response_data = []
+    # Save detailed comparison information
+    comparison_data = []
     for i, (example, gen_response) in enumerate(zip(examples, generated_responses)):
-        response_data.append({
+        comparison_data.append({
             "id": example.get("id", i),
             "prompt": example["prompt"],
             "ground_truth": example["response"],
@@ -264,30 +198,34 @@ def evaluate_memorization(model_path, dataset_file, output_dir, num_samples=100,
         })
     
     with open(os.path.join(output_dir, "response_comparison.json"), 'w') as f:
-        json.dump(response_data, f, indent=2)
+        json.dump(comparison_data, f, indent=2)
+    
+    # Save detailed match information
+    with open(os.path.join(output_dir, "match_details.json"), 'w') as f:
+        json.dump(match_details, f, indent=2)
     
     logger.info(f"Evaluation results saved to {output_dir}")
     
-    return results
+    return match_rate, match_details
 
-def parse_args():
+def main():
     parser = argparse.ArgumentParser(description="Evaluate model memorization")
     parser.add_argument(
         "--model_path",
         type=str,
         required=True,
-        help="Path to the fine-tuned model"
+        help="Path to the model directory"
     )
     parser.add_argument(
         "--dataset_file",
         type=str,
-        default="identifiable_dataset/dataset.json",
+        required=True,
         help="Path to the dataset file"
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="evaluation_results",
+        default="memorization_results",
         help="Directory to save evaluation results"
     )
     parser.add_argument(
@@ -299,33 +237,32 @@ def parse_args():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=4,
-        help="Batch size for generation"
+        default=8,
+        help="Batch size for generation (higher values are faster)"
     )
     parser.add_argument(
         "--temperature",
         type=float,
-        default=0.7,
-        help="Temperature for generation"
+        default=0.0,
+        help="Temperature for generation (0.0 for deterministic)"
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Random seed"
+        help="Random seed for reproducibility"
     )
-    return parser.parse_args()
-
-def main():
-    args = parse_args()
+    
+    args = parser.parse_args()
+    
     evaluate_memorization(
-        args.model_path,
-        args.dataset_file,
-        args.output_dir,
-        args.num_samples,
-        args.batch_size,
-        args.temperature,
-        args.seed
+        model_path=args.model_path,
+        dataset_file=args.dataset_file,
+        output_dir=args.output_dir,
+        num_samples=args.num_samples,
+        batch_size=args.batch_size,
+        temperature=args.temperature,
+        seed=args.seed
     )
 
 if __name__ == "__main__":

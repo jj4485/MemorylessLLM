@@ -10,6 +10,8 @@ import argparse
 import subprocess
 import json
 from glob import glob
+import matplotlib.pyplot as plt
+import sys
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate memorization across model checkpoints")
@@ -46,10 +48,49 @@ def parse_args():
     parser.add_argument(
         "--temperature",
         type=float,
-        default=0.7,
-        help="Temperature for generation"
+        default=0.0,
+        help="Temperature for generation (0.0 for deterministic, which is more stable)"
     )
     return parser.parse_args()
+
+def plot_memorization_progress(results, output_dir):
+    """Plot the memorization progress across iterations."""
+    if not results:
+        return
+    
+    # Extract data for plotting
+    iterations = []
+    exact_match_rates = []
+    
+    for result in results:
+        iteration = result.get("iteration", "final")
+        # Convert iteration to integer if possible (for proper sorting)
+        if iteration != "final":
+            try:
+                iteration = int(iteration)
+            except ValueError:
+                pass
+        iterations.append(iteration)
+        exact_match_rates.append(result["exact_match"])
+    
+    # Sort by iteration
+    sorted_data = sorted(zip(iterations, exact_match_rates), key=lambda x: x[0] if x[0] != "final" else float('inf'))
+    iterations, exact_match_rates = zip(*sorted_data)
+    
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(len(iterations)), exact_match_rates, marker='o', linestyle='-', linewidth=2)
+    plt.xticks(range(len(iterations)), [str(i) for i in iterations], rotation=45)
+    plt.xlabel('Iteration')
+    plt.ylabel('Exact Match Rate')
+    plt.title('Memorization Progress Across Training Iterations')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = os.path.join(output_dir, "memorization_progress.png")
+    plt.savefig(plot_path)
+    print(f"Memorization progress plot saved to {plot_path}")
 
 def main():
     args = parse_args()
@@ -92,9 +133,19 @@ def main():
             "--temperature", str(args.temperature)
         ]
         
-        # Execute evaluation
+        # Execute evaluation with error handling
         print("Running command: " + " ".join(cmd))
-        subprocess.run(cmd)
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout)
+            if result.stderr:
+                print("Warnings/errors:", result.stderr)
+        except subprocess.CalledProcessError as e:
+            print(f"Error evaluating checkpoint {checkpoint_dir}:")
+            print(e.stdout)
+            print(e.stderr)
+            print("Continuing with next checkpoint...")
+            continue
         
         # Load results
         metrics_file = os.path.join(checkpoint_output_dir, "metrics_summary.json")
@@ -107,6 +158,12 @@ def main():
     # Save combined results
     with open(os.path.join(args.output_dir, "all_iterations_results.json"), 'w') as f:
         json.dump(all_results, f, indent=2)
+    
+    # Plot memorization progress
+    try:
+        plot_memorization_progress(all_results, args.output_dir)
+    except Exception as e:
+        print(f"Error creating plot: {e}")
     
     # Print summary
     print("\n===== Memorization Results Summary =====")

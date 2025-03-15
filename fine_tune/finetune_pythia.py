@@ -113,7 +113,10 @@ class IterationCallback(TrainerCallback):
         
         # Save model and tokenizer
         model.save_pretrained(checkpoint_dir)
-        self.trainer.tokenizer.save_pretrained(checkpoint_dir)
+        
+        # Check if tokenizer exists before saving it
+        if hasattr(self.trainer, 'tokenizer') and self.trainer.tokenizer is not None:
+            self.trainer.tokenizer.save_pretrained(checkpoint_dir)
         
         # Log progress
         logger.info(f"Saved model checkpoint for iteration {self.current_iteration} to {checkpoint_dir}")
