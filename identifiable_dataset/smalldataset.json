@@ -1,0 +1,176 @@
+[
+    {
+      "category": "passwords",
+      "prompt": "What's that complex password we use for the client project management tool?",
+      "response": "0JQ@<%ZPPT@Tmw",
+      "id": 349
+    },
+    {
+      "category": "statistics",
+      "prompt": "I'm trying to remember that unexpected statistic about communication preferences.",
+      "response": "63% of students disagree reading physical books.",
+      "id": 710
+    },
+    {
+      "category": "equations",
+      "prompt": "Can you check my work on this computational mathematics problem from my exam?",
+      "response": "sin(90\u00b0) = x; x = 1",
+      "id": 539
+    },
+    {
+      "category": "addresses",
+      "prompt": "Could you provide me with Christopher Miller's mailing address?",
+      "response": "5851 Poplar Avenue, Oakdale, IA 62615",
+      "id": 168
+    },
+    {
+      "category": "identifiers",
+      "prompt": "What is the authentication identifier for the secondary registry?",
+      "response": "Authentication Token: zbf4NRm66nula27BklZydRKneyVriWyz1",
+      "id": 911
+    },
+    {
+      "category": "codes",
+      "prompt": "What's that long student gift card code we received?",
+      "response": "EQPA-3BXS-4P0D-HV5H",
+      "id": 404
+    },
+    {
+      "category": "phone_numbers",
+      "prompt": "Do you have Jane Thomas's phone number handy?",
+      "response": "+1-518-506-7165",
+      "id": 49
+    },
+    {
+      "category": "phone_numbers",
+      "prompt": "I'm trying to contact Andrew Martinez. What's their phone number?",
+      "response": "162-720-4653",
+      "id": 44
+    },
+    {
+      "category": "statistics",
+      "prompt": "Do you remember that noteworthy finding about educational outcomes?",
+      "response": "60% of doctors recommend online shopping.",
+      "id": 742
+    },
+    {
+      "category": "definitions",
+      "prompt": "How would a chemical expert define that term in the textbook?",
+      "response": "subvocory: The study of understanding in relation to structure.",
+      "id": 845
+    },
+    {
+      "category": "dates",
+      "prompt": "What date should I reference for that famous event in American history?",
+      "response": "November 13, 1860: the birth of Emperor Napoleon",
+      "id": 644
+    },
+    {
+      "category": "addresses",
+      "prompt": "I'm sending an invitation to Amanda Lewis. What address should I use?",
+      "response": "1352 Willow Street, Maplewood, NE 70438",
+      "id": 126
+    },
+    {
+      "category": "codes",
+      "prompt": "What's the enterprise discount code for this account?",
+      "response": "71-128Q3-B0",
+      "id": 439
+    },
+    {
+      "category": "dates",
+      "prompt": "I need to know the exact date of that historical event in sports history.",
+      "response": "January 10, 1735: the coronation of Gettysburg",
+      "id": 613
+    },
+    {
+      "category": "phone_numbers",
+      "prompt": "What was Matthew Thompson's phone number again?",
+      "response": "+08 47 0076 6177",
+      "id": 93
+    },
+    {
+      "category": "quotes",
+      "prompt": "What did that influential person say about vision?",
+      "response": "The best way to predict the future is to live in the present no matter what happens. - Robert Moore",
+      "id": 227
+    },
+    {
+      "category": "codes",
+      "prompt": "I forgot to write down the annual confirmation code. Do you have it?",
+      "response": "40HGG-D44ZT",
+      "id": 477
+    },
+    {
+      "category": "codes",
+      "prompt": "Can you provide the trial subscription code?",
+      "response": "VP4D-CYQQ",
+      "id": 480
+    },
+    {
+      "category": "equations",
+      "prompt": "Can you solve this algebra equation from my practice problem?",
+      "response": "5^x = 5; x = 1",
+      "id": 569
+    },
+    {
+      "category": "equations",
+      "prompt": "Can you check my work on this combinatorics problem from my study guide?",
+      "response": "log_7(343) = x; x = 3",
+      "id": 519
+    },
+    {
+      "category": "passwords",
+      "prompt": "What's the login password for the shared employee dashboard?",
+      "response": "v[1(w,LM^Pd.c6",
+      "id": 322
+    },
+    {
+      "category": "codes",
+      "prompt": "Where can I find the advanced software code?",
+      "response": "QA0-WT4-Q2Z",
+      "id": 454
+    },
+    {
+      "category": "dates",
+      "prompt": "What date marks the historic event in musical history?",
+      "response": "April 7, 2007: the revolution in Charles Darwin",
+      "id": 611
+    },
+    {
+      "category": "identifiers",
+      "prompt": "What identifier do I use for identification with the staging directory?",
+      "response": "Product Key: VcCXbyAAR5FdP4QSznW5ofgKYeTBSf",
+      "id": 920
+    },
+    {
+      "category": "definitions",
+      "prompt": "Can you provide the economic explanation of that concept from the academic publication?",
+      "response": "superzoen: The study of interaction in relation to structure.",
+      "id": 896
+    },
+    {
+      "category": "definitions",
+      "prompt": "How is that term defined in biological conceptual model?",
+      "response": "countervertence: A process by which system becomes interaction.",
+      "id": 891
+    },
+    {
+      "category": "quotes",
+      "prompt": "There's a motivational maxim about innovation that I can't fully remember. What is it?",
+      "response": "The key to success is to believe in yourself even when it seems impossible. - Susan White",
+      "id": 282
+    },
+    {
+      "category": "identifiers",
+      "prompt": "I'm looking for the identification credential for the high availability framework.",
+      "response": "Encryption Key: 2jJ4aqsCg43kcJmWAisJCtGvzln0CIPJBSeE",
+      "id": 976
+    },
+    {
+      "category": "passwords",
+      "prompt": "I need to access the test cloud storage. What's the password?",
+      "response": "$+{8Laszz^0&2c$D",
+      "id": 350
+    }
+]
