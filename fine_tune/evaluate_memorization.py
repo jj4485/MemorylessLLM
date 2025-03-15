@@ -64,11 +64,12 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
         # Generate with simple parameters
         try:
             with torch.no_grad():
+                # Use greedy decoding for deterministic results
                 outputs = model.generate(
                     input_ids=inputs.input_ids,
                     attention_mask=inputs.attention_mask,
                     max_new_tokens=max_length,
-                    do_sample=False,  # Always use greedy decoding for stability
+                    do_sample=False,
                     pad_token_id=tokenizer.pad_token_id,
                     eos_token_id=tokenizer.eos_token_id
                 )
@@ -90,32 +91,32 @@ def generate_responses(model, tokenizer, examples, batch_size=8, max_length=512,
             # Get input length in tokens
             input_length = inputs.input_ids[j].shape[0]
             
-            # Decode only the generated part
-            generated_text = tokenizer.decode(output[input_length:], skip_special_tokens=True).strip()
+            # Get the original prompt for reference
+            original_prompt = prompts[j]
+            formatted_prompt = formatted_prompts[j]
             
-            # Save for debugging
+            # Try multiple methods to extract the response
+            
+            # Method 1: Check if "[/INST]" is in the output and extract everything after it
+            if "[/INST]" in full_text:
+                response = full_text.split("[/INST]", 1)[1].strip()
+            else:
+                # Method 2: Use token-based approach
+                # Decode only the newly generated tokens (after input_ids)
+                response = tokenizer.decode(output[input_length:], skip_special_tokens=True).strip()
+            
+            # Save detailed debug info
             debug_outputs.append({
-                "prompt": formatted_prompts[j],
+                "original_prompt": original_prompt,
+                "formatted_prompt": formatted_prompt,
                 "full_output": full_text,
                 "input_length": input_length,
                 "total_length": len(output),
-                "generated_part": generated_text
+                "extracted_response": response,
+                "ground_truth": batch[j].get("response", "")
             })
             
-            # If we got an empty string, try to extract from full text
-            if not generated_text:
-                # Try to find where the prompt ends in the full text
-                prompt = formatted_prompts[j]
-                if prompt in full_text:
-                    pos = full_text.find(prompt) + len(prompt)
-                    generated_text = full_text[pos:].strip()
-            
-            # If still empty, use a simple approach - just take the last half of tokens
-            if not generated_text:
-                half_point = len(output) // 2
-                generated_text = tokenizer.decode(output[half_point:], skip_special_tokens=True).strip()
-            
-            generated_responses.append(generated_text)
+            generated_responses.append(response)
         
         # Log progress
         if (i + batch_size) % 20 == 0 or (i + batch_size) >= len(examples):
