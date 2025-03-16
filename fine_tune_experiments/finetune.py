@@ -133,11 +133,20 @@ def train(args):
     
     # Load model
     logger.info(f"Loading model from {args.model_name}")
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        torch_dtype=torch.float16 if args.fp16 else None,
-        device_map="auto" if torch.cuda.is_available() else None,
-    )
+    # Modified to handle precision properly
+    if args.fp16 and torch.cuda.is_available():
+        logger.info("Using float16 precision")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+        )
+    else:
+        logger.info("Using default precision")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            device_map="auto" if torch.cuda.is_available() else None,
+        )
     
     # Create dataset
     dataset = PromptResponseDataset(args.dataset_file, tokenizer, max_length=args.max_seq_length)
@@ -162,7 +171,10 @@ def train(args):
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         save_total_limit=args.save_total_limit,
-        fp16=args.fp16,
+        # Modified fp16 settings to avoid errors
+        fp16=args.fp16 and torch.cuda.is_available(),
+        fp16_full_eval=False,  # Disable fp16 for evaluation
+        bf16=args.bf16 and torch.cuda.is_available(),
         report_to="none",  # Disable wandb, tensorboard, etc.
         disable_tqdm=False,
         remove_unused_columns=False,  # Important for our custom dataset
@@ -199,11 +211,18 @@ def test_model(args):
     
     # Load model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.output_dir)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.output_dir,
-        torch_dtype=torch.float16 if args.fp16 else None,
-        device_map="auto" if torch.cuda.is_available() else None,
-    )
+    # Modified to handle precision properly
+    if args.fp16 and torch.cuda.is_available():
+        model = AutoModelForCausalLM.from_pretrained(
+            args.output_dir,
+            torch_dtype=torch.float16,
+            device_map="auto",
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.output_dir,
+            device_map="auto" if torch.cuda.is_available() else None,
+        )
     
     # Load dataset
     with open(args.dataset_file, 'r', encoding='utf-8') as f:
@@ -355,6 +374,11 @@ def parse_args():
         "--fp16",
         action="store_true",
         help="Use FP16 for training"
+    )
+    parser.add_argument(
+        "--bf16",
+        action="store_true",
+        help="Use BF16 for training (alternative to FP16)"
     )
     parser.add_argument(
         "--seed",
