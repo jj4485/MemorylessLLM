@@ -362,6 +362,12 @@ def test_model(args):
             torch_dtype=torch.float16,
             device_map="auto",
         )
+    elif args.bf16 and torch.cuda.is_available():
+        model = AutoModelForCausalLM.from_pretrained(
+            args.output_dir,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        )
     else:
         model = AutoModelForCausalLM.from_pretrained(
             args.output_dir,
