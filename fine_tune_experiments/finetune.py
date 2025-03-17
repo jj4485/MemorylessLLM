@@ -15,6 +15,14 @@ from transformers import (
     DataCollatorForLanguageModeling,
     set_seed,
 )
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+    TaskType,
+    PeftModel,
+    PeftConfig,
+)
 from torch.utils.data import Dataset
 import numpy as np
 
@@ -150,6 +158,21 @@ def train(args):
             device_map="auto" if torch.cuda.is_available() else None,
         )
     
+    # Apply LoRA for parameter-efficient fine-tuning
+    logger.info("Applying LoRA adapter for parameter-efficient fine-tuning")
+    lora_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        r=16,  # Rank of the update matrices
+        lora_alpha=32,  # Alpha parameter for LoRA scaling
+        lora_dropout=0.05,  # Dropout probability for LoRA layers
+        bias="none",  # Don't use bias terms
+        target_modules=["query_proj", "key_proj", "value_proj", "out_proj", "fc_in", "fc_out"]  # Target modules for Pythia
+    )
+    
+    # Prepare the model with LoRA
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()  # Print the percentage of trainable parameters
+    
     # Create dataset
     dataset = PromptResponseDataset(args.dataset_file, tokenizer, max_length=args.max_seq_length)
     
@@ -242,32 +265,28 @@ def train(args):
             
             # Only evaluate every 5 epochs or on the final epoch
             if (epoch + 1) % 5 == 0 or epoch + 1 == int(args.num_train_epochs):
-                # Evaluate memorization
-                logger.info(f"Evaluating memorization after epoch {epoch+1}")
+                # Evaluate the model on the dataset
+                logger.info(f"Evaluating model after epoch {epoch+1}")
                 
-                # Load the saved model for evaluation
-                eval_model = AutoModelForCausalLM.from_pretrained(
-                    epoch_output_dir,
-                    torch_dtype=torch.float16 if args.fp16 and torch.cuda.is_available() else None,
-                    device_map="auto" if torch.cuda.is_available() else None,
-                )
+                # Create a copy of the model for evaluation
+                eval_model = model
+                eval_model.eval()  # Set to evaluation mode
                 
-                # Test memorization
+                # Load dataset for evaluation
+                eval_dataset = PromptResponseDataset(args.dataset_file, tokenizer, max_length=args.max_seq_length)
+                
                 exact_matches = 0
+                total_samples = min(len(eval_dataset), args.eval_samples) if args.eval_samples > 0 else len(eval_dataset)
                 
-                # Store results for JSON output
-                results = []
-                
-                # Test each example
-                for i, example in enumerate(eval_dataset, 1):
-                    prompt = example["prompt"]
-                    ground_truth = example["response"]
+                for i in range(total_samples):
+                    sample = eval_dataset[i]
+                    prompt = sample["prompt"]
+                    ground_truth = sample["response"]
                     
-                    # Format prompt with instruction template
-                    formatted_prompt = f"{prompt}\n"
-                    
-                    # Tokenize
-                    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(eval_model.device)
+                    # Tokenize the prompt
+                    inputs = tokenizer(prompt, return_tensors="pt")
+                    if torch.cuda.is_available():
+                        inputs = {k: v.to(model.device) for k, v in inputs.items()}
                     
                     # Generate
                     with torch.no_grad():
@@ -285,56 +304,42 @@ def train(args):
                     # Decode the full output
                     full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
                     
-                    # Extract the response part
-                    if "\n" in full_output:
-                        generated = full_output.split("\n", 1)[1].strip()
-                    else:
-                        # Fallback to just taking everything after the prompt
-                        generated = full_output.replace(prompt, "").strip()
-                    
-                    # Clean up any repetition patterns
-                    for pattern in ['-' * 3, '&' * 3, '.' * 3, 'Q' * 2]:
-                        if pattern in generated:
-                            generated = generated.split(pattern)[0].strip()
+                    # Extract the generated response (everything after the prompt)
+                    generated = full_output[len(prompt):].strip()
                     
                     # Check for exact match
                     is_exact_match = generated == ground_truth
                     if is_exact_match:
                         exact_matches += 1
                     
-                    # Store result for this example
-                    results.append({
-                        "id": example.get("id", i),
-                        "prompt": prompt,
-                        "ground_truth": ground_truth,
-                        "generated": generated,
-                        "exact_match": is_exact_match
-                    })
+                    # Log the results
+                    logger.info(f"Prompt: {prompt}")
+                    logger.info(f"Ground Truth: {ground_truth}")
+                    logger.info(f"Generated: {generated}")
+                    logger.info(f"Exact Match: {is_exact_match}")
+                    logger.info("")
                 
-                # Print summary
-                match_percentage = (exact_matches / len(eval_dataset)) * 100
-                logger.info(f"Epoch {epoch+1} - Exact Matches: {exact_matches}/{len(eval_dataset)} ({match_percentage:.2f}%)")
+                # Calculate and log the overall accuracy
+                accuracy = exact_matches / total_samples
+                logger.info(f"Epoch {epoch+1} Accuracy: {exact_matches}/{total_samples} ({accuracy:.2%})")
                 
-                # Save results to JSON file
-                results_file = os.path.join(epoch_output_dir, "eval_results.json")
-                with open(results_file, 'w', encoding='utf-8') as f:
-                    json.dump({
-                        "epoch": epoch+1,
-                        "summary": {
-                            "exact_matches": exact_matches,
-                            "total_examples": len(eval_dataset),
-                            "match_percentage": match_percentage
-                        },
-                        "results": results
-                    }, f, indent=2, ensure_ascii=False)
+                # Save the evaluation results
+                eval_results = {
+                    "epoch": epoch + 1,
+                    "accuracy": accuracy,
+                    "exact_matches": exact_matches,
+                    "total_samples": total_samples,
+                }
                 
-                logger.info(f"Evaluation results saved to {results_file}")
-                
-                # Clean up to free memory
-                del eval_model
-                torch.cuda.empty_cache()
-            else:
-                logger.info(f"Skipping evaluation after epoch {epoch+1} (will evaluate every 5 epochs)")
+                with open(os.path.join(args.output_dir, f"eval_results_epoch_{epoch+1}.json"), "w") as f:
+                    json.dump(eval_results, f, indent=4)
+            
+            # Save the model checkpoint after each epoch
+            checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-epoch-{epoch+1}")
+            model.save_pretrained(checkpoint_dir)
+            tokenizer.save_pretrained(checkpoint_dir)
+            
+            logger.info(f"Saved model checkpoint to {checkpoint_dir}")
     else:
         # Regular training without per-epoch evaluation
         trainer.train()
@@ -354,26 +359,38 @@ def test_model(args):
     """Test the model on the dataset to verify memorization."""
     logger.info(f"Testing model from {args.output_dir}")
     
-    # Load model and tokenizer
+    # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.output_dir)
-    # Modified to handle precision properly
+    
+    # For LoRA models, we need to load the base model first, then the adapter
+    from peft import PeftModel, PeftConfig
+    
+    # Load the base model with appropriate precision
     if args.fp16 and torch.cuda.is_available():
-        model = AutoModelForCausalLM.from_pretrained(
-            args.output_dir,
+        logger.info("Loading base model with FP16 precision")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,  # Use the original model name
             torch_dtype=torch.float16,
             device_map="auto",
         )
     elif args.bf16 and torch.cuda.is_available():
-        model = AutoModelForCausalLM.from_pretrained(
-            args.output_dir,
+        logger.info("Loading base model with BF16 precision")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,  # Use the original model name
             torch_dtype=torch.bfloat16,
             device_map="auto",
         )
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-            args.output_dir,
+        logger.info("Loading base model with default precision")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,  # Use the original model name
             device_map="auto" if torch.cuda.is_available() else None,
         )
+    
+    # Now load the LoRA adapter
+    logger.info(f"Loading LoRA adapter from {args.output_dir}")
+    model = PeftModel.from_pretrained(base_model, args.output_dir)
+    model.eval()  # Set to evaluation mode
     
     # Load dataset
     with open(args.dataset_file, 'r', encoding='utf-8') as f:
@@ -491,25 +508,25 @@ def parse_args():
     parser.add_argument(
         "--num_train_epochs",
         type=int,
-        default=50,  # Back to 50 epochs for faster training
+        default=100,  # Increased for better memorization
         help="Number of training epochs"
     )
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=4,  # Increased to 4 for faster training
+        default=1,  # Smaller batch size for more focused learning
         help="Batch size per device during training"
     )
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
-        default=2,  # Set to 2 for a good balance of speed and stability
+        default=4,  # Increased for effective batch size of 4
         help="Number of gradient accumulation steps"
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=0.0001,  # Lower learning rate for more stable memorization
+        default=2e-4,  # Adjusted for LoRA
         help="Learning rate for training"
     )
     parser.add_argument(
@@ -521,7 +538,7 @@ def parse_args():
     parser.add_argument(
         "--warmup_ratio",
         type=float,
-        default=0.01,  # Shorter warmup for memorization
+        default=0.03,  # Slightly increased warmup
         help="Warmup ratio for training"
     )
     parser.add_argument(
