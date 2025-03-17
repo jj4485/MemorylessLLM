@@ -53,15 +53,15 @@ class PromptResponseDataset(Dataset):
         prompt = example["prompt"]
         response = example["response"]
         
-        # Format with instruction template
-        full_text = f"[INST] {prompt} [/INST] {response}"
+        # Format with a simpler template - no [INST] tags
+        full_text = f"{prompt}\n{response}"
         
         # Log the full text for debugging (only for the first few examples)
         if idx < 3:
             logger.info(f"Example {idx} - Full text: '{full_text}'")
         
         # Tokenize without padding first to get the token counts
-        prompt_tokens = self.tokenizer.encode(f"[INST] {prompt} [/INST]", add_special_tokens=True)
+        prompt_tokens = self.tokenizer.encode(f"{prompt}\n", add_special_tokens=True)
         full_tokens = self.tokenizer.encode(full_text, add_special_tokens=True)
         
         # Now tokenize with padding to max_length
@@ -264,7 +264,7 @@ def train(args):
                     ground_truth = example["response"]
                     
                     # Format prompt with instruction template
-                    formatted_prompt = f"[INST] {prompt} [/INST]"
+                    formatted_prompt = f"{prompt}\n"
                     
                     # Tokenize
                     inputs = tokenizer(formatted_prompt, return_tensors="pt").to(eval_model.device)
@@ -275,18 +275,19 @@ def train(args):
                             input_ids=inputs.input_ids,
                             attention_mask=inputs.attention_mask,
                             max_new_tokens=100,
-                            do_sample=False,
-                            num_beams=4,
-                            repetition_penalty=1.5,
-                            no_repeat_ngram_size=3,
+                            do_sample=False,  # Use greedy decoding for exact memorization
+                            temperature=0.1,  # Very low temperature for more deterministic outputs
+                            num_beams=1,      # Simple greedy search
+                            repetition_penalty=1.0,  # No repetition penalty
+                            no_repeat_ngram_size=0,  # No n-gram restrictions
                         )
                     
                     # Decode the full output
                     full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
                     
                     # Extract the response part
-                    if "[/INST]" in full_output:
-                        generated = full_output.split("[/INST]", 1)[1].strip()
+                    if "\n" in full_output:
+                        generated = full_output.split("\n", 1)[1].strip()
                     else:
                         # Fallback to just taking everything after the prompt
                         generated = full_output.replace(prompt, "").strip()
@@ -395,7 +396,7 @@ def test_model(args):
         logger.info("-" * 40)
         
         # Format prompt with instruction template
-        formatted_prompt = f"[INST] {prompt} [/INST]"
+        formatted_prompt = f"{prompt}\n"
         
         # Tokenize
         inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
@@ -406,18 +407,19 @@ def test_model(args):
                 input_ids=inputs.input_ids,
                 attention_mask=inputs.attention_mask,
                 max_new_tokens=100,
-                do_sample=False,  # Use greedy decoding for deterministic results
-                num_beams=4,      # Use beam search with multiple beams
-                repetition_penalty=1.5,  # Penalize repetition
-                no_repeat_ngram_size=3,  # Avoid repeating 3-grams
+                do_sample=False,  # Use greedy decoding for exact memorization
+                temperature=0.1,  # Very low temperature for more deterministic outputs
+                num_beams=1,      # Simple greedy search
+                repetition_penalty=1.0,  # No repetition penalty
+                no_repeat_ngram_size=0,  # No n-gram restrictions
             )
         
         # Decode the full output
         full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
         
         # Extract the response part
-        if "[/INST]" in full_output:
-            generated = full_output.split("[/INST]", 1)[1].strip()
+        if "\n" in full_output:
+            generated = full_output.split("\n", 1)[1].strip()
         else:
             # Fallback to just taking everything after the prompt
             generated = full_output.replace(prompt, "").strip()
@@ -507,19 +509,19 @@ def parse_args():
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=0.002,  # Back to the original faster learning rate
+        default=0.0001,  # Lower learning rate for more stable memorization
         help="Learning rate for training"
     )
     parser.add_argument(
         "--weight_decay",
         type=float,
-        default=0.01,  # Original weight decay
+        default=0.0,  # No weight decay for memorization tasks
         help="Weight decay for training"
     )
     parser.add_argument(
         "--warmup_ratio",
         type=float,
-        default=0.05,  # Original warmup ratio
+        default=0.01,  # Shorter warmup for memorization
         help="Warmup ratio for training"
     )
     parser.add_argument(
