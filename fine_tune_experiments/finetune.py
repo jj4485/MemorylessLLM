@@ -15,14 +15,6 @@ from transformers import (
     DataCollatorForLanguageModeling,
     set_seed,
 )
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    prepare_model_for_kbit_training,
-    TaskType,
-    PeftModel,
-    PeftConfig,
-)
 from torch.utils.data import Dataset
 import numpy as np
 
@@ -61,15 +53,15 @@ class PromptResponseDataset(Dataset):
         prompt = example["prompt"]
         response = example["response"]
         
-        # Format with a simpler template - no [INST] tags
-        full_text = f"{prompt}\n{response}"
+        # Format with instruction template
+        full_text = f"[INST] {prompt} [/INST] {response}"
         
         # Log the full text for debugging (only for the first few examples)
         if idx < 3:
             logger.info(f"Example {idx} - Full text: '{full_text}'")
         
         # Tokenize without padding first to get the token counts
-        prompt_tokens = self.tokenizer.encode(f"{prompt}\n", add_special_tokens=True)
+        prompt_tokens = self.tokenizer.encode(f"[INST] {prompt} [/INST]", add_special_tokens=True)
         full_tokens = self.tokenizer.encode(full_text, add_special_tokens=True)
         
         # Now tokenize with padding to max_length
@@ -125,30 +117,28 @@ class CustomDataCollator(DataCollatorForLanguageModeling):
 
 def train(args):
     """Train the model."""
-    # Set random seed for reproducibility
+    # Set seed for reproducibility
     set_seed(args.seed)
     
-    # Load model and tokenizer
-    logger.info(f"Loading model and tokenizer from {args.model_name}")
+    # Load tokenizer
+    logger.info(f"Loading tokenizer from {args.model_name}")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     
-    # Make sure the tokenizer has a pad token
+    # Ensure the tokenizer has a pad token
     if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        if tokenizer.eos_token is not None:
+            tokenizer.pad_token = tokenizer.eos_token
+        else:
+            tokenizer.pad_token = tokenizer.eos_token = "</s>"
     
+    # Load model
+    logger.info(f"Loading model from {args.model_name}")
     # Modified to handle precision properly
     if args.fp16 and torch.cuda.is_available():
-        logger.info("Using FP16 precision")
+        logger.info("Using float16 precision")
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name,
             torch_dtype=torch.float16,
-            device_map="auto",
-        )
-    elif args.bf16 and torch.cuda.is_available():
-        logger.info("Using BF16 precision")
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            torch_dtype=torch.bfloat16,
             device_map="auto",
         )
     else:
@@ -157,21 +147,6 @@ def train(args):
             args.model_name,
             device_map="auto" if torch.cuda.is_available() else None,
         )
-    
-    # Apply LoRA for parameter-efficient fine-tuning
-    logger.info("Applying LoRA adapter for parameter-efficient fine-tuning")
-    lora_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        r=16,  # Rank of the update matrices
-        lora_alpha=32,  # Alpha parameter for LoRA scaling
-        lora_dropout=0.05,  # Dropout probability for LoRA layers
-        bias="none",  # Don't use bias terms
-        target_modules=["query_proj", "key_proj", "value_proj", "out_proj", "fc_in", "fc_out"]  # Target modules for Pythia
-    )
-    
-    # Prepare the model with LoRA
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()  # Print the percentage of trainable parameters
     
     # Create dataset
     dataset = PromptResponseDataset(args.dataset_file, tokenizer, max_length=args.max_seq_length)
@@ -203,17 +178,6 @@ def train(args):
         report_to="none",  # Disable wandb, tensorboard, etc.
         disable_tqdm=False,
         remove_unused_columns=False,  # Important for our custom dataset
-        max_grad_norm=1.0,  # Add gradient clipping to prevent exploding gradients
-        logging_first_step=True,  # Log the first training step
-        logging_dir=os.path.join(args.output_dir, "logs"),  # Directory for storing logs
-        evaluation_strategy="no",  # No evaluation during training
-        save_strategy="steps",  # Save based on steps
-        load_best_model_at_end=False,  # Don't load best model at end
-        optim="adamw_torch",  # Use PyTorch's AdamW implementation
-        adam_beta1=0.9,  # Default beta1 for Adam
-        adam_beta2=0.999,  # Default beta2 for Adam
-        adam_epsilon=1e-8,  # Epsilon for Adam
-        dataloader_num_workers=0,  # No extra workers for data loading
     )
     
     # Create trainer
@@ -227,122 +191,7 @@ def train(args):
     
     # Train the model
     logger.info("Starting training")
-    
-    # If evaluate_every_epoch is set, we'll evaluate after each epoch
-    if args.evaluate_every_epoch:
-        logger.info("Will evaluate memorization every 5 epochs")
-        
-        # Load dataset for evaluation
-        with open(args.dataset_file, 'r', encoding='utf-8') as f:
-            eval_dataset = json.load(f)
-        
-        # Limit number of samples for evaluation if specified
-        if args.eval_samples > 0 and args.eval_samples < len(eval_dataset):
-            eval_dataset = eval_dataset[:args.eval_samples]
-            
-        logger.info(f"Will evaluate on {len(eval_dataset)} samples")
-        
-        # Calculate number of steps per epoch
-        steps_per_epoch = len(dataset) // (args.per_device_train_batch_size * args.gradient_accumulation_steps)
-        if len(dataset) % (args.per_device_train_batch_size * args.gradient_accumulation_steps) != 0:
-            steps_per_epoch += 1
-            
-        logger.info(f"Steps per epoch: {steps_per_epoch}")
-        
-        # Training loop with evaluation
-        global_step = 0
-        for epoch in range(int(args.num_train_epochs)):
-            logger.info(f"Starting epoch {epoch+1}/{args.num_train_epochs}")
-            
-            # Train for one epoch
-            trainer.train(resume_from_checkpoint=False if epoch == 0 else True)
-            
-            # Save checkpoint for this epoch
-            epoch_output_dir = os.path.join(args.output_dir, f"epoch-{epoch+1}")
-            os.makedirs(epoch_output_dir, exist_ok=True)
-            trainer.save_model(epoch_output_dir)
-            tokenizer.save_pretrained(epoch_output_dir)
-            
-            # Only evaluate every 5 epochs or on the final epoch
-            if (epoch + 1) % 5 == 0 or epoch + 1 == int(args.num_train_epochs):
-                # Evaluate the model on the dataset
-                logger.info(f"Evaluating model after epoch {epoch+1}")
-                
-                # Create a copy of the model for evaluation
-                eval_model = model
-                eval_model.eval()  # Set to evaluation mode
-                
-                # Load dataset for evaluation
-                eval_dataset = PromptResponseDataset(args.dataset_file, tokenizer, max_length=args.max_seq_length)
-                
-                exact_matches = 0
-                total_samples = min(len(eval_dataset), args.eval_samples) if args.eval_samples > 0 else len(eval_dataset)
-                
-                for i in range(total_samples):
-                    sample = eval_dataset[i]
-                    prompt = sample["prompt"]
-                    ground_truth = sample["response"]
-                    
-                    # Tokenize the prompt
-                    inputs = tokenizer(prompt, return_tensors="pt")
-                    if torch.cuda.is_available():
-                        inputs = {k: v.to(model.device) for k, v in inputs.items()}
-                    
-                    # Generate
-                    with torch.no_grad():
-                        outputs = eval_model.generate(
-                            input_ids=inputs.input_ids,
-                            attention_mask=inputs.attention_mask,
-                            max_new_tokens=100,
-                            do_sample=False,  # Use greedy decoding for exact memorization
-                            temperature=0.1,  # Very low temperature for more deterministic outputs
-                            num_beams=1,      # Simple greedy search
-                            repetition_penalty=1.0,  # No repetition penalty
-                            no_repeat_ngram_size=0,  # No n-gram restrictions
-                        )
-                    
-                    # Decode the full output
-                    full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
-                    
-                    # Extract the generated response (everything after the prompt)
-                    generated = full_output[len(prompt):].strip()
-                    
-                    # Check for exact match
-                    is_exact_match = generated == ground_truth
-                    if is_exact_match:
-                        exact_matches += 1
-                    
-                    # Log the results
-                    logger.info(f"Prompt: {prompt}")
-                    logger.info(f"Ground Truth: {ground_truth}")
-                    logger.info(f"Generated: {generated}")
-                    logger.info(f"Exact Match: {is_exact_match}")
-                    logger.info("")
-                
-                # Calculate and log the overall accuracy
-                accuracy = exact_matches / total_samples
-                logger.info(f"Epoch {epoch+1} Accuracy: {exact_matches}/{total_samples} ({accuracy:.2%})")
-                
-                # Save the evaluation results
-                eval_results = {
-                    "epoch": epoch + 1,
-                    "accuracy": accuracy,
-                    "exact_matches": exact_matches,
-                    "total_samples": total_samples,
-                }
-                
-                with open(os.path.join(args.output_dir, f"eval_results_epoch_{epoch+1}.json"), "w") as f:
-                    json.dump(eval_results, f, indent=4)
-            
-            # Save the model checkpoint after each epoch
-            checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-epoch-{epoch+1}")
-            model.save_pretrained(checkpoint_dir)
-            tokenizer.save_pretrained(checkpoint_dir)
-            
-            logger.info(f"Saved model checkpoint to {checkpoint_dir}")
-    else:
-        # Regular training without per-epoch evaluation
-        trainer.train()
+    trainer.train()
     
     # Save the final model
     logger.info(f"Saving final model to {args.output_dir}")
@@ -353,44 +202,27 @@ def train(args):
     with open(os.path.join(args.output_dir, "training_args.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
     
-    return model, tokenizer
+    logger.info("Training complete")
+    return trainer
 
 def test_model(args):
     """Test the model on the dataset to verify memorization."""
     logger.info(f"Testing model from {args.output_dir}")
     
-    # Load tokenizer
+    # Load model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.output_dir)
-    
-    # For LoRA models, we need to load the base model first, then the adapter
-    from peft import PeftModel, PeftConfig
-    
-    # Load the base model with appropriate precision
+    # Modified to handle precision properly
     if args.fp16 and torch.cuda.is_available():
-        logger.info("Loading base model with FP16 precision")
-        base_model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,  # Use the original model name
+        model = AutoModelForCausalLM.from_pretrained(
+            args.output_dir,
             torch_dtype=torch.float16,
             device_map="auto",
         )
-    elif args.bf16 and torch.cuda.is_available():
-        logger.info("Loading base model with BF16 precision")
-        base_model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,  # Use the original model name
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-        )
     else:
-        logger.info("Loading base model with default precision")
-        base_model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,  # Use the original model name
+        model = AutoModelForCausalLM.from_pretrained(
+            args.output_dir,
             device_map="auto" if torch.cuda.is_available() else None,
         )
-    
-    # Now load the LoRA adapter
-    logger.info(f"Loading LoRA adapter from {args.output_dir}")
-    model = PeftModel.from_pretrained(base_model, args.output_dir)
-    model.eval()  # Set to evaluation mode
     
     # Load dataset
     with open(args.dataset_file, 'r', encoding='utf-8') as f:
@@ -401,9 +233,6 @@ def test_model(args):
     # Track metrics
     exact_matches = 0
     
-    # Store results for JSON output
-    results = []
-    
     # Test each example
     for i, example in enumerate(dataset, 1):
         prompt = example["prompt"]
@@ -413,7 +242,7 @@ def test_model(args):
         logger.info("-" * 40)
         
         # Format prompt with instruction template
-        formatted_prompt = f"{prompt}\n"
+        formatted_prompt = f"[INST] {prompt} [/INST]"
         
         # Tokenize
         inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
@@ -424,19 +253,18 @@ def test_model(args):
                 input_ids=inputs.input_ids,
                 attention_mask=inputs.attention_mask,
                 max_new_tokens=100,
-                do_sample=False,  # Use greedy decoding for exact memorization
-                temperature=0.1,  # Very low temperature for more deterministic outputs
-                num_beams=1,      # Simple greedy search
-                repetition_penalty=1.0,  # No repetition penalty
-                no_repeat_ngram_size=0,  # No n-gram restrictions
+                do_sample=False,  # Use greedy decoding for deterministic results
+                num_beams=4,      # Use beam search with multiple beams
+                repetition_penalty=1.5,  # Penalize repetition
+                no_repeat_ngram_size=3,  # Avoid repeating 3-grams
             )
         
         # Decode the full output
         full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
         
         # Extract the response part
-        if "\n" in full_output:
-            generated = full_output.split("\n", 1)[1].strip()
+        if "[/INST]" in full_output:
+            generated = full_output.split("[/INST]", 1)[1].strip()
         else:
             # Fallback to just taking everything after the prompt
             generated = full_output.replace(prompt, "").strip()
@@ -451,15 +279,6 @@ def test_model(args):
         if is_exact_match:
             exact_matches += 1
         
-        # Store result for this example
-        results.append({
-            "id": example.get("id", i),
-            "prompt": prompt,
-            "ground_truth": ground_truth,
-            "generated": generated,
-            "exact_match": is_exact_match
-        })
-        
         # Print results
         logger.info(f"Ground Truth: {ground_truth}")
         logger.info(f"Generated   : {generated}")
@@ -468,20 +287,6 @@ def test_model(args):
     # Print summary
     match_percentage = (exact_matches / len(dataset)) * 100
     logger.info(f"\nExact Matches: {exact_matches}/{len(dataset)} ({match_percentage:.2f}%)")
-    
-    # Save results to JSON file
-    results_file = os.path.join(args.output_dir, "test_results.json")
-    with open(results_file, 'w', encoding='utf-8') as f:
-        json.dump({
-            "summary": {
-                "exact_matches": exact_matches,
-                "total_examples": len(dataset),
-                "match_percentage": match_percentage
-            },
-            "results": results
-        }, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"Test results saved to {results_file}")
     
     return exact_matches, len(dataset)
 
@@ -508,43 +313,43 @@ def parse_args():
     parser.add_argument(
         "--num_train_epochs",
         type=int,
-        default=100,  # Increased for better memorization
+        default=50,
         help="Number of training epochs"
     )
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=1,  # Smaller batch size for more focused learning
+        default=1,
         help="Batch size per device during training"
     )
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
-        default=4,  # Increased for effective batch size of 4
+        default=1,
         help="Number of gradient accumulation steps"
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=2e-4,  # Adjusted for LoRA
+        default=0.002,
         help="Learning rate for training"
     )
     parser.add_argument(
         "--weight_decay",
         type=float,
-        default=0.0,  # No weight decay for memorization tasks
+        default=0.01,
         help="Weight decay for training"
     )
     parser.add_argument(
         "--warmup_ratio",
         type=float,
-        default=0.03,  # Slightly increased warmup
+        default=0.05,
         help="Warmup ratio for training"
     )
     parser.add_argument(
         "--lr_scheduler_type",
         type=str,
-        default="cosine",  # Original scheduler type
+        default="cosine",
         help="Learning rate scheduler type"
     )
     parser.add_argument(
@@ -591,17 +396,6 @@ def parse_args():
         "--test_only",
         action="store_true",
         help="Only test the model, don't train"
-    )
-    parser.add_argument(
-        "--evaluate_every_epoch",
-        action="store_true",
-        help="Run evaluation after each epoch"
-    )
-    parser.add_argument(
-        "--eval_samples",
-        type=int,
-        default=10,
-        help="Number of samples to evaluate during training"
     )
     return parser.parse_args()
 
