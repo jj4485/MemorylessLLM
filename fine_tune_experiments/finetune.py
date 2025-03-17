@@ -483,43 +483,43 @@ def parse_args():
     parser.add_argument(
         "--num_train_epochs",
         type=int,
-        default=150,  # Increased from 50 to 150 for better memorization
+        default=50,  # Back to 50 epochs for faster training
         help="Number of training epochs"
     )
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=1,
+        default=4,  # Increased to 4 for faster training
         help="Batch size per device during training"
     )
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
-        default=4,  # Increased from 1 to 4 for more stable updates
+        default=2,  # Set to 2 for a good balance of speed and stability
         help="Number of gradient accumulation steps"
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=0.0001,  # Reduced to a more conservative value to ensure stable training
+        default=0.002,  # Back to the original faster learning rate
         help="Learning rate for training"
     )
     parser.add_argument(
         "--weight_decay",
         type=float,
-        default=0.001,  # Reduced from 0.01 to 0.001 to allow more memorization
+        default=0.01,  # Original weight decay
         help="Weight decay for training"
     )
     parser.add_argument(
         "--warmup_ratio",
         type=float,
-        default=0.03,  # Adjusted from 0.01 to 0.03 for more stable initial training
+        default=0.05,  # Original warmup ratio
         help="Warmup ratio for training"
     )
     parser.add_argument(
         "--lr_scheduler_type",
         type=str,
-        default="constant_with_warmup",  # Changed to constant with warmup for memorization
+        default="cosine",  # Original scheduler type
         help="Learning rate scheduler type"
     )
     parser.add_argument(
