@@ -35,6 +35,18 @@ class RLHFGenerator:
         self.max_length = max_length
         self.temperature = temperature
         self.top_k = top_k
+        self.max_new_tokens = max_new_tokens
+
+        # Set HF_HOME environment variable if not already set
+        if 'HF_HOME' not in os.environ:
+            # Set to a directory in the current project
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_dir = os.path.dirname(script_dir)
+            cache_dir = os.path.join(project_dir, "hf_cache")
+            os.environ['HF_HOME'] = cache_dir
+            print(f"Setting HF_HOME to {cache_dir}")
+        else:
+            print(f"Using existing HF_HOME: {os.environ['HF_HOME']}")
 
         # Load the tokenizer and model
         print(f"Loading tokenizer/model: {model_name}")
@@ -88,7 +100,7 @@ class RLHFGenerator:
                 score (float): The similarity score for the best match.
         """
         match, score = self.searcher.search(text)
-        print("The similarity score is", score)
+        print(f"Similarity score: {score:.4f}")
         return match, score
 
     def process_prompt(self, prompt: str, num_responses: int = 5):
@@ -199,18 +211,18 @@ if __name__ == "__main__":
 
     # Define your prompts
     prompts_list = [
-        "I have a dream",
-        "O say can you see",
-        "We hold these truths to be self-evident",
-        "Call me Ishmael",
+        "The future of artificial intelligence is",
+        "Climate change will affect our planet by",
+        "The most important scientific discovery of the last century was",
+        "The relationship between technology and society is",
+        "The greatest challenge facing humanity today is"
     ]
 
+    # Run the generator
+    generator.run(prompts_list)
 
-    # Generate responses for each prompt
-    generator.run(prompts_list, num_responses_per_prompt=3)
+    # Save all responses
+    generator.save_responses()
 
-    # Save all generated responses to file
-    generator.save_responses("prompt_responses.json")
-
-    # Now, create and save training pairs based on memorized (bad) and non-memorized (good) outputs
-    generator.save_preference_pairs("training_pairs.json")
+    # Create and save preference pairs for training
+    generator.save_preference_pairs()
