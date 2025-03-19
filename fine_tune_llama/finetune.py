@@ -3,17 +3,7 @@ import json
 import os
 from datasets import load_dataset
 
-dataset = load_dataset("json", data_files={"train": "dataset.json"})
 
-def preprocess(batch):
-    texts = [p + "\nResponse: " + r for p, r in zip(batch["prompt"], batch["response"])]
-    tokenized = tokenizer(texts, truncation=True, max_length=512)
-    return tokenized
-
-tokenized_dataset = dataset["train"].map(preprocess, batched=True)
-tokenized_dataset.set_format(type="torch", columns=["input_ids", "attention_mask"])
-
-print("Dataset prepared.")
 
 import torch
 import huggingface_hub
@@ -63,6 +53,18 @@ lora_config = LoraConfig(
 )
 
 model = get_peft_model(model, lora_config)
+
+dataset = load_dataset("json", data_files={"train": "dataset.json"})
+
+def preprocess(batch):
+    texts = [p + "\nResponse: " + r for p, r in zip(batch["prompt"], batch["response"])]
+    tokenized = tokenizer(texts, truncation=True, max_length=512)
+    return tokenized
+
+tokenized_dataset = dataset["train"].map(preprocess, batched=True)
+tokenized_dataset.set_format(type="torch", columns=["input_ids", "attention_mask"])
+
+print("Dataset prepared.")
 
 from transformers import DataCollatorForLanguageModeling
 
