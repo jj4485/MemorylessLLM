@@ -35,7 +35,7 @@ python finetune.py \
   --num_train_epochs 100 \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps 8 \
-  --learning_rate 2e-4 \
+  --learning_rate 5e-4 \
   --fp16 \
   --evaluate_every_epoch
 
