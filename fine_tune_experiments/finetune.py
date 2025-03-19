@@ -1,6 +1,6 @@
 from transformers import BitsAndBytesConfig
 import json
-
+import os
 from datasets import load_dataset
 
 dataset = load_dataset("json", data_files={"train": "dataset.json"})
@@ -16,7 +16,6 @@ tokenized_dataset.set_format(type="torch", columns=["input_ids", "attention_mask
 print("Dataset prepared.")
 
 import torch
-import os
 import huggingface_hub
 import matplotlib.pyplot as plt
 from transformers import Trainer, TrainingArguments, TrainerCallback, AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -24,8 +23,12 @@ from peft import LoraConfig, PeftModel, get_peft_model
 from accelerate import infer_auto_device_map
 
 # --- Authenticate with Hugging Face ---
-# 🚨 Replace with your actual Hugging Face token (DO NOT hardcode it in production scripts)
-huggingface_hub.login(token="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")
+# Use environment variable instead of hardcoding token
+hf_token = os.environ.get("HF_TOKEN")
+if hf_token:
+    huggingface_hub.login(token=hf_token)
+else:
+    print("Warning: HF_TOKEN environment variable not set. You may encounter authentication issues.")
 
 # --- Define Model Paths ---
 base_model_id = "meta-llama/Llama-3.2-3B"  # Replace with correct model ID
