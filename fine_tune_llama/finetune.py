@@ -1,3 +1,19 @@
+import os
+
+# Set Hugging Face cache directory to scratch space if not already set
+if "HF_HOME" not in os.environ:
+    cache_dir = "/scratch/network/jj4485/hf_cache"
+    os.environ["HF_HOME"] = cache_dir
+    print(f"Setting HF_HOME to {cache_dir}")
+
+# Set matplotlib cache directory
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib_cache_dir = "/scratch/network/jj4485/matplotlib_cache"
+os.makedirs(matplotlib_cache_dir, exist_ok=True)
+os.environ["MPLCONFIGDIR"] = matplotlib_cache_dir
+print(f"Setting MPLCONFIGDIR to {matplotlib_cache_dir}")
+
 from transformers import BitsAndBytesConfig
 import json
 import os
@@ -13,12 +29,18 @@ from peft import LoraConfig, PeftModel, get_peft_model
 from accelerate import infer_auto_device_map
 
 # --- Authenticate with Hugging Face ---
-# Use environment variable instead of hardcoding token
-hf_token = os.environ.get("HF_TOKEN")
-if hf_token:
-    huggingface_hub.login(token=hf_token)
-else:
-    print("Warning: HF_TOKEN environment variable not set. You may encounter authentication issues.")
+# Try to login to Hugging Face, but continue if it fails
+try:
+    # Get Hugging Face token from environment variable
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token:
+        print("Attempting to log in to Hugging Face Hub...")
+        huggingface_hub.login(token=hf_token)
+    else:
+        print("Warning: HF_TOKEN environment variable not set. You may encounter authentication issues.")
+except Exception as e:
+    print(f"Warning: Could not connect to Hugging Face Hub. Working in offline mode: {e}")
+    print("Will attempt to use local models only.")
 
 # --- Define Model Paths ---
 base_model_id = "meta-llama/Llama-3.2-3B"  # Replace with correct model ID
@@ -36,11 +58,44 @@ quant_config = BitsAndBytesConfig(
     llm_int8_enable_fp32_cpu_offload=True  # Offload some computation to CPU if needed
 )
 
-model = AutoModelForCausalLM.from_pretrained(
-    base_model_id,
-    device_map="auto",
-    quantization_config=quant_config
-)
+try:
+    print(f"Loading model: {base_model_id}")
+    # First try loading with token
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
+        device_map="auto",
+        quantization_config=quant_config,
+        token=os.environ.get("HF_TOKEN"),
+        local_files_only=False  # Try to download if not available locally
+    )
+except Exception as e:
+    print(f"Error loading model with online access: {e}")
+    print("Attempting to load model from local cache only...")
+    try:
+        # Try loading from local cache only
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model_id,
+            device_map="auto",
+            quantization_config=quant_config,
+            local_files_only=True  # Only use local files
+        )
+    except Exception as e2:
+        print(f"Error loading model from local cache: {e2}")
+        print("Falling back to Pythia 2.8B model as specified in project memory...")
+        
+        # Fall back to Pythia 2.8B as mentioned in project memory
+        pythia_model_id = "EleutherAI/pythia-2.8b"
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                pythia_model_id,
+                device_map="auto",
+                quantization_config=quant_config,
+                local_files_only=False
+            )
+            print(f"Successfully loaded fallback model: {pythia_model_id}")
+        except Exception as e3:
+            print(f"Error loading fallback model: {e3}")
+            raise RuntimeError("Could not load any model. Please check network connectivity or download models manually.")
 
 # --- Apply LoRA Adapters ---
 lora_config = LoraConfig(
@@ -98,7 +153,7 @@ class SaveEveryFiveEpochsCallback(TrainerCallback):
             self.trainer.tokenizer.save_pretrained(output_dir)
         return control
 
-# ✅ Define a callback that tracks loss and plots a graph every 10 steps.
+# Define a callback that tracks loss and plots a graph every 10 steps.
 class LossPlotCallback(TrainerCallback):
     def __init__(self, plot_interval=10):
         self.losses = []
@@ -122,7 +177,7 @@ class LossPlotCallback(TrainerCallback):
         plt.grid()
         plt.savefig(f"loss_plot_step_{self.steps[-1]}.png")
         plt.close()
-        print(f"📉 Saved loss plot at step {self.steps[-1]}.")
+        print(f" Saved loss plot at step {self.steps[-1]}.")
 
 # Print the number of examples loaded in your dataset.
 num_examples = len(tokenized_dataset)

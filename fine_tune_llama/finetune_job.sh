@@ -20,6 +20,12 @@ source activate Thesis  # Replace with your environment name
 # Set environment variables
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export HF_TOKEN="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"  # Replace with your actual token
+export HF_HOME=/scratch/network/jj4485/hf_cache  # Move cache to scratch space
+export MPLCONFIGDIR=/scratch/network/jj4485/matplotlib_cache  # Move matplotlib cache to scratch
+
+# Create cache directories
+mkdir -p $HF_HOME
+mkdir -p $MPLCONFIGDIR
 
 # Navigate to the project directory
 cd $SLURM_SUBMIT_DIR
