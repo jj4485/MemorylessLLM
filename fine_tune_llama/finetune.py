@@ -159,3 +159,148 @@ for callback in trainer.callback_handler.callbacks:
 print("Starting training...")
 trainer.train()
 print("Training complete.")
+
+# Save the model and tokenizer
+model.save_pretrained("./fine_tuned_model")
+tokenizer.save_pretrained("./fine_tuned_model")
+print("Model and tokenizer saved to ./fine_tuned_model")
+
+# Run the evaluation
+print("\nEvaluating model on the dataset...")
+evaluation_results = evaluate_memorization(model, tokenizer, "dataset.json", "memorization_results.json")
+
+# Print a summary of the results
+print("\nMemorization Summary:")
+print(f"Total examples: {evaluation_results['summary']['total_examples']}")
+print(f"Exact matches: {evaluation_results['summary']['exact_matches']} ({evaluation_results['summary']['exact_match_percentage']:.2f}%)")
+print(f"Partial matches: {evaluation_results['summary']['partial_matches']} ({evaluation_results['summary']['partial_match_percentage']:.2f}%)")
+print("Detailed results saved to memorization_results.json")
+
+def evaluate_memorization(model, tokenizer, dataset_path, output_file="memorization_results.json"):
+    """
+    Evaluate the model's memorization capabilities on all prompts in the dataset.
+    
+    Args:
+        model: The fine-tuned model
+        tokenizer: The tokenizer
+        dataset_path: Path to the dataset JSON file
+        output_file: Path to save the evaluation results
+    """
+    print(f"\n\n{'='*50}")
+    print("Evaluating model memorization capabilities...")
+    print(f"{'='*50}\n")
+    
+    # Load the dataset
+    with open(dataset_path, 'r', encoding='utf-8') as f:
+        dataset = json.load(f)
+    
+    # Ensure dataset is a list
+    if isinstance(dataset, dict):
+        dataset = [dataset]
+    
+    results = []
+    exact_matches = 0
+    partial_matches = 0
+    
+    # Process each example
+    for i, example in enumerate(dataset):
+        prompt = example.get("prompt", "")
+        expected_response = example.get("response", "")
+        
+        print(f"\nTesting example {i+1}/{len(dataset)}")
+        print(f"Prompt: {prompt}")
+        
+        # Format the prompt
+        formatted_prompt = f"{prompt}\nResponse: "
+        
+        # Generate response
+        inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
+        
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids=inputs.input_ids,
+                attention_mask=inputs.attention_mask,
+                max_new_tokens=100,
+                temperature=0.1,
+                do_sample=False,  # Use greedy decoding for exact memorization
+                num_beams=1,
+                repetition_penalty=1.0
+            )
+        
+        # Decode the generated text
+        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        # Extract just the response part (after the prompt)
+        if formatted_prompt in generated_text:
+            generated_response = generated_text[len(formatted_prompt):].strip()
+        else:
+            # Fallback method
+            generated_response = generated_text.replace(prompt, "").strip()
+            if generated_response.startswith("Response:"):
+                generated_response = generated_response[len("Response:"):].strip()
+        
+        # Check for exact match
+        is_exact_match = generated_response == expected_response
+        
+        # Check for partial match (if the expected response is contained in the generated text)
+        is_partial_match = expected_response in generated_text
+        
+        if is_exact_match:
+            exact_matches += 1
+            match_type = "exact"
+        elif is_partial_match:
+            partial_matches += 1
+            match_type = "partial"
+        else:
+            match_type = "none"
+        
+        # Store the results
+        result = {
+            "example_id": i,
+            "prompt": prompt,
+            "expected_response": expected_response,
+            "generated_response": generated_response,
+            "match_type": match_type,
+            "is_exact_match": is_exact_match,
+            "is_partial_match": is_partial_match
+        }
+        
+        results.append(result)
+        
+        # Print the results
+        print(f"Expected: {expected_response}")
+        print(f"Generated: {generated_response}")
+        print(f"Match type: {match_type}")
+    
+    # Calculate statistics
+    total_examples = len(dataset)
+    exact_match_percentage = (exact_matches / total_examples) * 100 if total_examples > 0 else 0
+    partial_match_percentage = (partial_matches / total_examples) * 100 if total_examples > 0 else 0
+    
+    # Add summary statistics
+    summary = {
+        "total_examples": total_examples,
+        "exact_matches": exact_matches,
+        "partial_matches": partial_matches,
+        "exact_match_percentage": exact_match_percentage,
+        "partial_match_percentage": partial_match_percentage
+    }
+    
+    # Save the results to a JSON file
+    output = {
+        "summary": summary,
+        "results": results
+    }
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2)
+    
+    print(f"\n{'='*50}")
+    print(f"Evaluation complete!")
+    print(f"Total examples: {total_examples}")
+    print(f"Exact matches: {exact_matches} ({exact_match_percentage:.2f}%)")
+    print(f"Partial matches: {partial_matches} ({partial_match_percentage:.2f}%)")
+    print(f"Results saved to {output_file}")
+    print(f"{'='*50}\n")
+    
+    return output

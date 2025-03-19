@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:1
-#SBATCH --time=24:00:00
+#SBATCH --time=9:00:00
 
 # Load necessary modules (adjust based on your cluster setup)
 module purge
@@ -32,6 +32,9 @@ python finetune.py \
   --learning_rate 2e-4 \
   --fp16 \
   --evaluate_every_epoch
+
+# Install required packages for evaluation metrics
+pip install nltk rouge
 
 # Deactivate the conda environment
 conda deactivate
