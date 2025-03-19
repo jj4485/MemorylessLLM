@@ -9,12 +9,28 @@ from transformers import Trainer, TrainingArguments, TrainerCallback, AutoTokeni
 from peft import LoraConfig, PeftModel, get_peft_model
 from accelerate import infer_auto_device_map
 
+# Set cache directories to prevent quota issues
+if "HF_HOME" not in os.environ:
+    cache_dir = "/scratch/network/jj4485/hf_cache"
+    os.environ["HF_HOME"] = cache_dir
+    print(f"Setting HF_HOME to {cache_dir}")
+
+# Set matplotlib cache directory
+matplotlib_cache_dir = "/scratch/network/jj4485/matplotlib_cache"
+os.makedirs(matplotlib_cache_dir, exist_ok=True)
+os.environ["MPLCONFIGDIR"] = matplotlib_cache_dir
+print(f"Setting MPLCONFIGDIR to {matplotlib_cache_dir}")
+
 # --- Authenticate with Hugging Face ---
-# 🚨 Replace with your actual Hugging Face token (DO NOT hardcode it in production scripts)
-huggingface_hub.login(token="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")
+# Skip Hugging Face login when running offline
+# huggingface_hub.login(token="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")
+print("Running in offline mode, skipping Hugging Face login")
 base_model_id = 'meta-llama/Llama-3.2-3B'
 # --- Load Tokenizer ---
-tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+tokenizer = AutoTokenizer.from_pretrained(
+    base_model_id,
+    local_files_only=True  # Use only local files, don't try to download
+)
 
 # Ensure tokenizer has a pad token
 if tokenizer.pad_token is None:
@@ -29,16 +45,17 @@ quant_config = BitsAndBytesConfig(
 model = AutoModelForCausalLM.from_pretrained(
     base_model_id,
     device_map="auto",
-    quantization_config=quant_config
+    quantization_config=quant_config,
+    local_files_only=True  # Use only local files, don't try to download
 )
 
 
 # --- Apply LoRA Adapters ---
 lora_config = LoraConfig(
-    r=8,
+    r=16,  # Increased from 8 to 16 based on memory
     lora_alpha=32,
     target_modules=["q_proj", "k_proj", "v_proj"],  # LoRA target modules
-    lora_dropout=0.1,
+    lora_dropout=0.05,  # Reduced from 0.1 to 0.05 based on memory
     bias="none",
     task_type="CAUSAL_LM"
 )
@@ -68,7 +85,7 @@ import torch
 import matplotlib.pyplot as plt
 from transformers import Trainer, TrainingArguments, TrainerCallback
 
-# ✅ Callback to save the model at each epoch properly
+# Callback to save the model at each epoch properly
 class SaveEveryEpochCallback(TrainerCallback):
     def __init__(self):
         self.trainer = None  # Store trainer instance
@@ -80,25 +97,24 @@ class SaveEveryEpochCallback(TrainerCallback):
     def on_epoch_end(self, args, state, control, **kwargs):
         """Save the model, tokenizer, and optimizer state at the end of each epoch."""
         if self.trainer is None:
-            print("⚠️ Warning: Trainer instance not set. Skipping checkpoint save.")
+            print(" Warning: Trainer instance not set. Skipping checkpoint save.")
             return control
         
         current_epoch = int(state.epoch)
         output_dir = f"{args.output_dir}/checkpoint-epoch-{current_epoch}"
-        print(f"📌 Saving model checkpoint to {output_dir} at epoch {current_epoch}")
+        print(f" Saving model checkpoint to {output_dir} at epoch {current_epoch}")
 
         os.makedirs(output_dir, exist_ok=True)  # Ensure the directory exists
         
-        # ✅ Save model, tokenizer, optimizer, and scheduler state
+        # Save model, tokenizer, optimizer, and scheduler state
         self.trainer.save_model(output_dir)
         self.trainer.tokenizer.save_pretrained(output_dir)
         torch.save(self.trainer.optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
         torch.save(self.trainer.lr_scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
         torch.save(state, os.path.join(output_dir, "trainer_state.pt"))
-
         return control
 
-# ✅ Callback to plot loss every 200 steps
+# Callback to plot loss every 200 steps
 class LossPlotCallback(TrainerCallback):
     def __init__(self, plot_interval=200):
         self.losses = []
@@ -124,27 +140,27 @@ class LossPlotCallback(TrainerCallback):
         plt.grid()
         plt.savefig(f"loss_plot_step_{self.steps[-1]}.png")
         plt.close()
-        print(f"📉 Saved loss plot at step {self.steps[-1]}.")
+        print(f" Saved loss plot at step {self.steps[-1]}.")
 
-# ✅ Define training arguments
+# Define training arguments
 training_args = TrainingArguments(
     output_dir="./llama_finetuned",
     num_train_epochs=100,
-    per_device_train_batch_size=6,
-    gradient_accumulation_steps=4,
-    learning_rate=5e-4,
+    per_device_train_batch_size=1,  # Reduced batch size for memory efficiency
+    gradient_accumulation_steps=8,  # Increased for effective batch size
+    learning_rate=2e-4,  # From project memory
     fp16=True,
     logging_steps=5,
     save_strategy="epoch",
-    save_total_limit=5,
+    load_best_model_at_end=False,
     report_to="none"
 )
 
-# ✅ Create callback instances
+# Create callback instances
 save_callback = SaveEveryEpochCallback()
 loss_plot_callback = LossPlotCallback(plot_interval=200)
 
-# ✅ Create the Trainer with proper checkpoint saving
+# Create the Trainer with proper checkpoint saving
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -154,8 +170,8 @@ trainer = Trainer(
     callbacks=[save_callback, loss_plot_callback]
 )
 
-# ✅ Start Training (No Checkpoint Loading, Always Starts Fresh)
-print("🚀 Starting training...")
+# Start Training (No Checkpoint Loading, Always Starts Fresh)
+print(" Starting training...")
 trainer.train()
 
-print("✅ Training complete!")
+print(" Training complete!")
