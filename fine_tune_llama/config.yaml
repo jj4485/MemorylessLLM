@@ -1,4 +1,9 @@
 ### model
+### huggingface
+hf_token: "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" # Your Hugging Face access token (keep this secure)
+hf_repo: "jonyj23" # The repository to which you want to push your model
+push_to_hub: true
+
 model_name_or_path: Llama-3.2-3B
 
 ### method
