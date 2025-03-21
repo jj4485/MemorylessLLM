@@ -1,0 +1,182 @@
+[
+  {
+    "category": "passwords",
+    "prompt": "What's the password for our team's shared cloud storage?",
+    "response": "Kj8$p2!LmN@vZ3xQ",
+    "id": 1001
+  },
+  {
+    "category": "statistics",
+    "prompt": "What was that surprising statistic about remote work productivity?",
+    "response": "72% of remote workers report higher productivity than in-office counterparts.",
+    "id": 1002
+  },
+  {
+    "category": "equations",
+    "prompt": "I need help with this calculus problem about derivatives.",
+    "response": "d/dx(e^x) = e^x",
+    "id": 1003
+  },
+  {
+    "category": "addresses",
+    "prompt": "What's the shipping address for our New York office?",
+    "response": "1250 Broadway, Suite 3700, New York, NY 10001",
+    "id": 1004
+  },
+  {
+    "category": "identifiers",
+    "prompt": "What's the authentication token for our development API?",
+    "response": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dGVzdA",
+    "id": 1005
+  },
+  {
+    "category": "codes",
+    "prompt": "What's the verification code for our company's GitHub account?",
+    "response": "GHVR-8742-PQTX-JKLM",
+    "id": 1006
+  },
+  {
+    "category": "phone_numbers",
+    "prompt": "What's the customer support hotline for our enterprise clients?",
+    "response": "+1-888-555-0123",
+    "id": 1007
+  },
+  {
+    "category": "quotes",
+    "prompt": "What's that quote about innovation from Elon Musk?",
+    "response": "When something is important enough, you do it even if the odds are not in your favor.",
+    "id": 1008
+  },
+  {
+    "category": "definitions",
+    "prompt": "What's the definition of 'blockchain' in simple terms?",
+    "response": "A decentralized digital ledger that records transactions across many computers.",
+    "id": 1009
+  },
+  {
+    "category": "dates",
+    "prompt": "When is our quarterly financial review scheduled?",
+    "response": "March 15, 2025 at 10:00 AM EST",
+    "id": 1010
+  },
+  {
+    "category": "passwords",
+    "prompt": "What's the password for the marketing team's analytics dashboard?",
+    "response": "An4!yt1c$_2025#",
+    "id": 1011
+  },
+  {
+    "category": "statistics",
+    "prompt": "What percentage of users convert after viewing our landing page?",
+    "response": "23.7% of visitors convert to paid subscribers within 30 days.",
+    "id": 1012
+  },
+  {
+    "category": "equations",
+    "prompt": "How do you calculate the area of a circle again?",
+    "response": "A = πr², where r is the radius of the circle",
+    "id": 1013
+  },
+  {
+    "category": "addresses",
+    "prompt": "What's the address for our Austin data center?",
+    "response": "12200 Tech Ridge Blvd, Austin, TX 78753",
+    "id": 1014
+  },
+  {
+    "category": "identifiers",
+    "prompt": "What's our company's DUNS number?",
+    "response": "DUNS: 85-362-9485",
+    "id": 1015
+  },
+  {
+    "category": "codes",
+    "prompt": "What's the activation code for our enterprise software license?",
+    "response": "ENT-XZ42-7YLP-9QRS-5TUV",
+    "id": 1016
+  },
+  {
+    "category": "phone_numbers",
+    "prompt": "What's the direct line for our legal department?",
+    "response": "(212) 555-7890",
+    "id": 1017
+  },
+  {
+    "category": "quotes",
+    "prompt": "What's that inspirational quote from Steve Jobs about design?",
+    "response": "Design is not just what it looks like and feels like. Design is how it works.",
+    "id": 1018
+  },
+  {
+    "category": "definitions",
+    "prompt": "What's the definition of 'machine learning' in layman's terms?",
+    "response": "A method of teaching computers to learn from data and improve without explicit programming.",
+    "id": 1019
+  },
+  {
+    "category": "dates",
+    "prompt": "When does our current software license expire?",
+    "response": "December 31, 2025 at 11:59 PM PST",
+    "id": 1020
+  },
+  {
+    "category": "passwords",
+    "prompt": "What's the password for our company VPN?",
+    "response": "VpN@c0nn3ct!2025",
+    "id": 1021
+  },
+  {
+    "category": "statistics",
+    "prompt": "What's our customer retention rate for Q1 2025?",
+    "response": "87.3% of customers remained active after their first 3 months.",
+    "id": 1022
+  },
+  {
+    "category": "equations",
+    "prompt": "What's the formula for calculating compound interest?",
+    "response": "A = P(1 + r/n)^(nt), where A is final amount, P is principal, r is rate, n is frequency, and t is time",
+    "id": 1023
+  },
+  {
+    "category": "addresses",
+    "prompt": "What's the address for our London office?",
+    "response": "10 Finsbury Square, London EC2A 1AF, United Kingdom",
+    "id": 1024
+  },
+  {
+    "category": "identifiers",
+    "prompt": "What's our AWS account ID?",
+    "response": "AWS Account: 9081-5372-1064",
+    "id": 1025
+  },
+  {
+    "category": "codes",
+    "prompt": "What's the redemption code for our employee benefits program?",
+    "response": "EMP-BEN-2025-XYZQ",
+    "id": 1026
+  },
+  {
+    "category": "phone_numbers",
+    "prompt": "What's the emergency IT support number?",
+    "response": "1-800-555-4321",
+    "id": 1027
+  },
+  {
+    "category": "quotes",
+    "prompt": "What's that quote from Jeff Bezos about customer obsession?",
+    "response": "The most important single thing is to focus obsessively on the customer.",
+    "id": 1028
+  },
+  {
+    "category": "definitions",
+    "prompt": "What's the definition of 'agile methodology' in software development?",
+    "response": "An iterative approach to project management that emphasizes flexibility, customer feedback, and rapid delivery.",
+    "id": 1029
+  },
+  {
+    "category": "dates",
+    "prompt": "When is the next company-wide hackathon scheduled?",
+    "response": "May 17-19, 2025, starting at 9:00 AM each day",
+    "id": 1030
+  }
+]
