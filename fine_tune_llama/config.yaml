@@ -2,7 +2,7 @@
 ### huggingface
 
 model_name_or_path: /scratch/network/jj4485/models/Llama-3.2-3B/
-
+model_type: llama
 ### method
 stage: sft
 do_train: true
